@@ -138,7 +138,7 @@ git commit -m "chore: scaffold realestate package"
 - Test: `tests/test_models.py`
 
 **Interfaces:**
-- Produces: `RawListing(external_id: str, title: str, description: str, price_raw: str, address_raw: str, specs: dict[str, str], image_urls: list[str], source_file: str)`
+- Produces: `RawListing(external_id: str, title: str, description: str, price_raw: str, address_raw: str, specs: dict[str, str], image_urls: list[str], source_file: str, map_lat: float | None, map_lon: float | None)`
 - Produces: `EnrichedListing(external_id: str, title: str, description: str, price_eur: float, rooms: int | None, built_area_sqm: float | None, floor_number: int | None, construction_year_range: str | None, layout_type: str | None, address_text: str, latitude: float | None, longitude: float | None, location_confidence: str, nearest_subway_station: str | None, subway_walking_minutes: float | None, image_urls: list[str])`
 
 - [ ] **Step 1: Write the failing test**
@@ -158,9 +158,12 @@ def test_raw_listing_construction():
         specs={"Suprafata utila": "48 m²"},
         image_urls=["https://frankfurt.apollo.olxcdn.com:443/v1/files/example/image"],
         source_file="304473136.html",
+        map_lat=44.42,
+        map_lon=26.10,
     )
     assert listing.external_id == "304473136"
     assert listing.specs["Suprafata utila"] == "48 m²"
+    assert listing.map_lat == 44.42
 
 
 def test_enriched_listing_defaults_for_missing_location():
@@ -207,6 +210,12 @@ class RawListing(BaseModel):
     specs: dict[str, str]
     image_urls: list[str]
     source_file: str
+    # OLX's own JSON gives an approximate lat/lon per listing (see ad.map in the JSON schema) —
+    # privacy-fuzzed (radius + show_detailed:false observed on every real listing sampled so far),
+    # but free (no network call) and often finer-grained than geocoding the sparse text address.
+    # None when a listing's JSON omits map data (not observed yet, but the schema doesn't guarantee it).
+    map_lat: float | None
+    map_lon: float | None
 
 
 class EnrichedListing(BaseModel):
@@ -289,6 +298,7 @@ SAMPLE_AD = {
         {"key": "floor", "name": "Etaj", "value": "3"},
     ],
     "photos": ["https://frankfurt.apollo.olxcdn.com:443/v1/files/dlbik2gpbb3j1-RO/image;s=750x1000"],
+    "map": {"lat": 44.42, "lon": 26.1, "radius": 3, "show_detailed": False, "zoom": 12},
 }
 
 
@@ -338,6 +348,20 @@ def test_parses_image_urls():
 def test_raises_when_prerendered_state_missing():
     with pytest.raises(ValueError, match="PRERENDERED_STATE"):
         parse_olx_listing_html("<html><body>no state here</body></html>", external_id="000")
+
+
+def test_parses_map_coordinates():
+    listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
+    assert listing.map_lat == 44.42
+    assert listing.map_lon == 26.1
+
+
+def test_map_coordinates_default_to_none_when_absent():
+    ad_without_map = {k: v for k, v in SAMPLE_AD.items() if k != "map"}
+    html = _build_sample_html(ad_without_map)
+    listing = parse_olx_listing_html(html, external_id="304473136")
+    assert listing.map_lat is None
+    assert listing.map_lon is None
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -384,6 +408,7 @@ def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
     price_raw = f"{price_info['value']:,.0f} {price_info['currencySymbol']}".replace(",", ".")
 
     specs = {param["name"]: param["value"] for param in ad.get("params", [])}
+    map_data = ad.get("map") or {}
 
     return RawListing(
         external_id=external_id,
@@ -394,13 +419,21 @@ def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
         specs=specs,
         image_urls=ad.get("photos", []),
         source_file=f"{external_id}.html",
+        map_lat=map_data.get("lat"),
+        map_lon=map_data.get("lon"),
     )
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/ingest/test_olx_parser.py -v`
-Expected: PASS (6 passed)
+Expected: PASS (8 passed)
+
+Note: OLX's `map` data is privacy-fuzzed in practice — every real listing sampled during this
+project had `show_detailed: false` with a `radius`, and several distinct listings shared the exact
+same coordinates (neighborhood-level precision, not per-building). Still worth using directly
+(Task 8 prefers it over geocoding, see below) since it's free and at least as precise as the sparse
+text address, but don't treat `map_lat`/`map_lon` as an exact location.
 
 - [ ] **Step 5: Commit**
 
@@ -1146,6 +1179,13 @@ git commit -m "feat: compute nearest-subway walking distance via Overpass+OSRM"
 - Consumes: `RawListing` (Task 2), `normalize_price_eur`/`normalize_rooms`/`normalize_specs` (Task 5), `CachedGeocoder` (Task 6), `nearest_subway_station` (Task 7)
 - Produces: `enrich_listing(raw: RawListing, *, geocoder: CachedGeocoder, stations: list[dict], nearest_station_fn=nearest_subway_station) -> EnrichedListing`
 
+**Location precedence:** OLX's own `map.lat`/`map.lon` (already on `RawListing` as `map_lat`/`map_lon`
+per Task 3) is used directly when present — no geocoding call at all, since every real listing
+sampled during this project had map data. Nominatim geocoding via `CachedGeocoder` is only a
+fallback for the rare/hypothetical case where a listing's JSON omits `map`. This matters for cost
+and reliability, not just precision: it means the network-dependent, rate-limited geocoder path is
+barely exercised in practice.
+
 - [ ] **Step 1: Write the failing test**
 
 ```python
@@ -1154,7 +1194,7 @@ from realestate.enrich.geocoder import CachedGeocoder, GeocodeResult
 from realestate.enrich.pipeline import enrich_listing
 from realestate.models import RawListing
 
-RAW = RawListing(
+RAW_WITH_MAP = RawListing(
     external_id="304473136",
     title="Vand apartament 2 camere TITAN",
     description="Direct proprietar, apartament 2 camere decomandat.",
@@ -1163,12 +1203,40 @@ RAW = RawListing(
     specs={"Suprafata utila": "48 m²", "Etaj": "3"},
     image_urls=["https://example.com/a.jpg"],
     source_file="304473136.html",
+    map_lat=44.42,
+    map_lon=26.1,
 )
+
+RAW_WITHOUT_MAP = RAW_WITH_MAP.model_copy(update={"map_lat": None, "map_lon": None})
 
 STATIONS = [{"name": "Universitate", "lat": 44.4356, "lon": 26.1023}]
 
 
-def test_enrich_listing_with_successful_geocode(tmp_path):
+def test_enrich_listing_uses_map_coordinates_without_geocoding(tmp_path):
+    def fail_if_called(address):
+        raise AssertionError("geocoder should not be called when map_lat/map_lon are present")
+
+    geocoder = CachedGeocoder(cache_path=tmp_path / "cache.json", geocode_fn=fail_if_called)
+
+    def fake_nearest_station(lat, lon, stations, **kwargs):
+        return ("Universitate", 6.5)
+
+    enriched = enrich_listing(
+        RAW_WITH_MAP, geocoder=geocoder, stations=STATIONS, nearest_station_fn=fake_nearest_station
+    )
+
+    assert enriched.price_eur == 100000.0
+    assert enriched.rooms == 2
+    assert enriched.built_area_sqm == 48.0
+    assert enriched.floor_number == 3
+    assert enriched.latitude == 44.42
+    assert enriched.longitude == 26.1
+    assert enriched.location_confidence == "ok"
+    assert enriched.nearest_subway_station == "Universitate"
+    assert enriched.subway_walking_minutes == 6.5
+
+
+def test_enrich_listing_falls_back_to_geocoding_when_map_absent(tmp_path):
     geocoder = CachedGeocoder(
         cache_path=tmp_path / "cache.json",
         geocode_fn=lambda address: GeocodeResult(latitude=44.4325, longitude=26.1013),
@@ -1178,27 +1246,22 @@ def test_enrich_listing_with_successful_geocode(tmp_path):
         return ("Universitate", 6.5)
 
     enriched = enrich_listing(
-        RAW, geocoder=geocoder, stations=STATIONS, nearest_station_fn=fake_nearest_station
+        RAW_WITHOUT_MAP, geocoder=geocoder, stations=STATIONS, nearest_station_fn=fake_nearest_station
     )
 
-    assert enriched.price_eur == 100000.0
-    assert enriched.rooms == 2
-    assert enriched.built_area_sqm == 48.0
-    assert enriched.floor_number == 3
     assert enriched.latitude == 44.4325
     assert enriched.location_confidence == "ok"
     assert enriched.nearest_subway_station == "Universitate"
-    assert enriched.subway_walking_minutes == 6.5
 
 
-def test_enrich_listing_flags_low_confidence_location_when_geocode_fails(tmp_path):
+def test_enrich_listing_flags_low_confidence_location_when_map_absent_and_geocode_fails(tmp_path):
     geocoder = CachedGeocoder(
         cache_path=tmp_path / "cache.json",
         geocode_fn=lambda address: None,
     )
 
     enriched = enrich_listing(
-        RAW, geocoder=geocoder, stations=STATIONS, nearest_station_fn=lambda *a, **k: None
+        RAW_WITHOUT_MAP, geocoder=geocoder, stations=STATIONS, nearest_station_fn=lambda *a, **k: None
     )
 
     assert enriched.latitude is None
@@ -1231,15 +1294,19 @@ def enrich_listing(
     nearest_station_fn: Callable[..., tuple[str, float] | None] = nearest_subway_station,
 ) -> EnrichedListing:
     specs = normalize_specs(raw.specs)
-    geocode_result = geocoder.geocode(raw.address_raw)
 
-    latitude = geocode_result.latitude if geocode_result else None
-    longitude = geocode_result.longitude if geocode_result else None
-    location_confidence = "ok" if geocode_result else "low_confidence_location"
+    if raw.map_lat is not None and raw.map_lon is not None:
+        latitude, longitude = raw.map_lat, raw.map_lon
+    else:
+        geocode_result = geocoder.geocode(raw.address_raw)
+        latitude = geocode_result.latitude if geocode_result else None
+        longitude = geocode_result.longitude if geocode_result else None
+
+    location_confidence = "ok" if latitude is not None else "low_confidence_location"
 
     station_name: str | None = None
     walking_minutes: float | None = None
-    if geocode_result is not None:
+    if latitude is not None:
         nearest = nearest_station_fn(latitude, longitude, stations)
         if nearest is not None:
             station_name, walking_minutes = nearest
@@ -1267,7 +1334,7 @@ def enrich_listing(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/enrich/test_pipeline.py -v`
-Expected: PASS (2 passed)
+Expected: PASS (3 passed)
 
 - [ ] **Step 5: Commit**
 
