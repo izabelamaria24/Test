@@ -33,8 +33,30 @@ def test_normalize_specs_maps_known_labels():
     assert normalized["floor_number"] == 3
     assert normalized["construction_year_range"] == "1977 – 1990"
     assert normalized["layout_type"] == "Decomandat"
+    assert len(normalized) == 4  # All 4 keys always present
 
 
 def test_normalize_specs_ignores_unknown_labels():
     normalized = normalize_specs({"Un label necunoscut": "valoare"})
-    assert normalized == {}
+    assert normalized == {
+        "built_area_sqm": None,
+        "floor_number": None,
+        "construction_year_range": None,
+        "layout_type": None,
+    }
+
+
+def test_normalize_specs_handles_parter_floor():
+    normalized = normalize_specs({"Etaj": "Parter"})
+    assert normalized["floor_number"] == 0
+    assert normalized["built_area_sqm"] is None
+    assert normalized["construction_year_range"] is None
+    assert normalized["layout_type"] is None
+
+
+def test_normalize_specs_handles_demisol_floor():
+    normalized = normalize_specs({"Etaj": "Demisol"})
+    assert normalized["floor_number"] == -1
+    assert normalized["built_area_sqm"] is None
+    assert normalized["construction_year_range"] is None
+    assert normalized["layout_type"] is None

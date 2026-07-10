@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 SPEC_LABEL_MAP: dict[str, str] = {
     "Suprafata utila": "built_area_sqm",
@@ -8,6 +9,11 @@ SPEC_LABEL_MAP: dict[str, str] = {
 }
 
 _NUMERIC_FIELDS = {"built_area_sqm", "floor_number"}
+
+_NON_NUMERIC_FLOOR_TERMS: dict[str, int] = {
+    "parter": 0,
+    "demisol": -1,
+}
 
 
 def normalize_price_eur(price_raw: str) -> float:
@@ -29,7 +35,12 @@ def normalize_rooms(title: str) -> int | None:
 
 
 def normalize_specs(specs: dict[str, str]) -> dict[str, object]:
-    normalized: dict[str, object] = {}
+    normalized: dict[str, object] = {
+        "built_area_sqm": None,
+        "floor_number": None,
+        "construction_year_range": None,
+        "layout_type": None,
+    }
     for raw_label, raw_value in specs.items():
         field = SPEC_LABEL_MAP.get(raw_label)
         if field is None:
@@ -38,8 +49,16 @@ def normalize_specs(specs: dict[str, str]) -> dict[str, object]:
             match = re.search(r"([\d.,]+)", raw_value)
             normalized[field] = float(match.group(1).replace(",", ".")) if match else None
         elif field == "floor_number":
-            match = re.search(r"(\d+)", raw_value)
-            normalized[field] = int(match.group(1)) if match else None
+            # Check for known non-numeric floor terms first
+            normalized_raw = unicodedata.normalize("NFD", raw_value.lower()).encode("ascii", "ignore").decode()
+            for term, floor_value in _NON_NUMERIC_FLOOR_TERMS.items():
+                if term in normalized_raw:
+                    normalized[field] = floor_value
+                    break
+            else:
+                # Fall back to digit extraction
+                match = re.search(r"(\d+)", raw_value)
+                normalized[field] = int(match.group(1)) if match else None
         else:
             normalized[field] = raw_value
     return normalized
