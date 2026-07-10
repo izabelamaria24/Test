@@ -1642,11 +1642,12 @@ git commit -m "feat: add Qdrant-backed vector store with structured filtering"
 
 ```python
 # tests/test_ingestion_pipeline.py
+import copy
 from pathlib import Path
 
 from realestate.enrich.geocoder import CachedGeocoder, GeocodeResult
 from realestate.ingestion_pipeline import run_ingestion
-from tests.ingest.test_olx_parser import SAMPLE_HTML
+from tests.ingest.test_olx_parser import SAMPLE_AD, SAMPLE_HTML, _build_sample_html
 
 
 class FakeEmbedder:
@@ -1690,6 +1691,41 @@ def test_run_ingestion_embeds_and_stores_valid_listings(tmp_path: Path):
     assert len(report.parse_failures) == 1
     assert store.upserted[0][0] == "304473136"
     assert store.upserted[0][2]["price_eur"] == 100000.0
+
+
+def test_run_ingestion_quarantines_enrich_failures_without_aborting_batch(tmp_path: Path):
+    # A listing that parses fine (well-formed PRERENDERED_STATE) but whose price is not in
+    # the expected "<digits> €" format - mirrors real OLX listings priced "La cerere" (on
+    # request) that fail normalize_price_eur's regex during enrichment, not during parsing.
+    bad_price_ad = copy.deepcopy(SAMPLE_AD)
+    bad_price_ad["id"] = 999999999
+    bad_price_ad["price"]["regularPrice"] = {
+        "value": 100000,
+        "currencyCode": "EUR",
+        "currencySymbol": "La cerere",
+    }
+
+    (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
+    (tmp_path / "999999999.html").write_text(_build_sample_html(bad_price_ad), encoding="utf-8")
+
+    geocoder = CachedGeocoder(
+        cache_path=tmp_path / "cache.json",
+        geocode_fn=lambda address: GeocodeResult(latitude=44.43, longitude=26.10),
+    )
+    store = FakeStore()
+
+    report = run_ingestion(
+        tmp_path,
+        geocoder=geocoder,
+        stations=[],
+        embedder=FakeEmbedder(),
+        store=store,
+    )
+
+    assert report.succeeded == 1
+    assert len(report.enrich_failures) == 1
+    assert report.enrich_failures[0][0] == "999999999"
+    assert store.upserted[0][0] == "304473136"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1715,6 +1751,7 @@ from realestate.store.base import VectorStore
 class IngestionReport:
     succeeded: int = 0
     parse_failures: list[tuple[Path, str]] = field(default_factory=list)
+    enrich_failures: list[tuple[str, str]] = field(default_factory=list)
 
 
 def run_ingestion(
@@ -1728,23 +1765,35 @@ def run_ingestion(
     raw_listings, parse_failures = load_olx_html_directory(html_dir)
 
     succeeded = 0
+    enrich_failures: list[tuple[str, str]] = []
     for raw in raw_listings:
-        enriched = enrich_listing(raw, geocoder=geocoder, stations=stations)
-        vector = embedder.embed_passage(enriched.description)
-        store.upsert(
-            enriched.external_id,
-            vector,
-            payload=enriched.model_dump(),
-        )
-        succeeded += 1
+        try:
+            enriched = enrich_listing(raw, geocoder=geocoder, stations=stations)
+            vector = embedder.embed_passage(enriched.description)
+            store.upsert(
+                enriched.external_id,
+                vector,
+                payload=enriched.model_dump(),
+            )
+            succeeded += 1
+        except Exception as exc:  # noqa: BLE001 - quarantine, don't crash the batch
+            enrich_failures.append((raw.external_id, str(exc)))
 
-    return IngestionReport(succeeded=succeeded, parse_failures=parse_failures)
+    return IngestionReport(
+        succeeded=succeeded, parse_failures=parse_failures, enrich_failures=enrich_failures
+    )
 ```
+
+Note: a per-listing failure here (e.g. a price string like "La cerere"/"on request" that
+`normalize_price_eur` can't parse) is quarantined into `enrich_failures` rather than aborting the
+whole batch — mirroring `load_olx_html_directory`'s quarantine pattern for parse failures. This was
+added after review flagged that the original brief's bare loop would crash an entire ~100-listing
+ingestion run on one malformed real listing.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_ingestion_pipeline.py -v`
-Expected: PASS (1 passed)
+Expected: PASS (2 passed)
 
 - [ ] **Step 5: Write the real CLI entry point**
 
@@ -1789,6 +1838,10 @@ if __name__ == "__main__":
         print(f"{len(report.parse_failures)} files failed to parse:")
         for path, error in report.parse_failures:
             print(f"  {path}: {error}")
+    if report.enrich_failures:
+        print(f"{len(report.enrich_failures)} listings failed to enrich/embed/store:")
+        for external_id, error in report.enrich_failures:
+            print(f"  {external_id}: {error}")
 ```
 
 - [ ] **Step 6: Commit**
