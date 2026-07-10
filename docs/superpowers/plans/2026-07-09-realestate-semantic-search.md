@@ -1928,6 +1928,30 @@ def test_parse_falls_back_when_request_raises():
 
     assert result.filters == {}
     assert result.semantic_text == "some query"
+
+
+def test_parse_falls_back_when_response_is_a_bare_number():
+    # Ollama's format:"json" guarantees valid JSON syntax, not that it's an object - a local
+    # model can still emit a scalar under prompt confusion.
+    def fake_post(url, json, timeout):
+        return FakeResponse({"response": "42"})
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("some query")
+
+    assert result.filters == {}
+    assert result.semantic_text == "some query"
+
+
+def test_parse_falls_back_when_response_is_a_json_array():
+    def fake_post(url, json, timeout):
+        return FakeResponse({"response": "[1, 2, 3]"})
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("some query")
+
+    assert result.filters == {}
+    assert result.semantic_text == "some query"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1990,14 +2014,14 @@ class OllamaQueryParser:
             response.raise_for_status()
             raw = json.loads(response.json()["response"])
             return ParsedQuery(**raw)
-        except (requests.RequestException, ConnectionError, json.JSONDecodeError, ValidationError, KeyError):
+        except (requests.RequestException, ConnectionError, json.JSONDecodeError, TypeError, ValidationError, KeyError):
             return ParsedQuery(filters={}, semantic_text=query)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/query/test_parser.py -v`
-Expected: PASS (3 passed)
+Expected: PASS (5 passed)
 
 - [ ] **Step 5: Commit**
 
