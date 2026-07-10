@@ -54,3 +54,25 @@ def test_parse_falls_back_when_request_raises():
 
     assert result.filters == {}
     assert result.semantic_text == "some query"
+
+
+def test_parse_falls_back_when_json_is_not_a_dict_number():
+    def fake_post(url, json, timeout):
+        return FakeResponse({"response": "42"})
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("some query")
+
+    assert result.filters == {}
+    assert result.semantic_text == "some query"
+
+
+def test_parse_falls_back_when_json_is_not_a_dict_array():
+    def fake_post(url, json, timeout):
+        return FakeResponse({"response": "[1,2,3]"})
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("some query")
+
+    assert result.filters == {}
+    assert result.semantic_text == "some query"

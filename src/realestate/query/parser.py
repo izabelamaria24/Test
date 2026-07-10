@@ -49,5 +49,5 @@ class OllamaQueryParser:
             response.raise_for_status()
             raw = json.loads(response.json()["response"])
             return ParsedQuery(**raw)
-        except (requests.RequestException, ConnectionError, json.JSONDecodeError, ValidationError, KeyError):
+        except (requests.RequestException, ConnectionError, json.JSONDecodeError, ValidationError, KeyError, TypeError):
             return ParsedQuery(filters={}, semantic_text=query)
