@@ -39,13 +39,21 @@ query-listing pairs exist to train on.
 
 ## Data Strategy
 
-- **Prototyping data:** open Kaggle datasets (e.g. Bucharest House Price Dataset, generic
-  apartment/housing datasets) to build and validate the pipeline before dealing with scraping
-  constraints.
-- **Real data:** small-scale, rate-limited, respectful scraping of Romanian listing platforms
-  (e.g. imobiliare.ro, storia.ro) for research/development use, not redistribution. A paid
-  aggregator API (e.g. PropAPIS, ~$99–299/mo) is a possible later convenience for bulk pulls, not
+- **Real data:** rate-limited scraping of OLX.ro's real-estate category (Bucharest apartments).
+  This was not the original candidate — imobiliare.ro and storia.ro were tried first and both were
+  found, empirically, to run an active Cloudflare managed challenge on ordinary requests (not just
+  a User-Agent check; a real "Just a moment..." JS challenge page), which puts them out of scope
+  since bypassing it requires browser-automation evasion. OLX.ro was verified as genuinely open
+  instead: its `robots.txt` explicitly allows crawling, listing pages return plain 200 responses,
+  and each page embeds the full listing as structured JSON (`window.__PRERENDERED_STATE__`) rather
+  than requiring fragile CSS-selector scraping. This is used for research/development, not
+  redistribution. A paid aggregator API (e.g. PropAPIS, ~$99–299/mo) remains a possible later
+  convenience for bulk pulls at a scale beyond what direct scraping comfortably supports, not
   needed for Phase 1.
+- **Kaggle/open datasets:** considered for prototyping (e.g. Bucharest House Price Dataset) but
+  ultimately not used — these turned out to be purely structured (price/rooms/area, no free text,
+  no images), which can't exercise the thing Phase 1 is actually about: semantic search over
+  descriptive text. OLX's real data serves that purpose directly instead.
 - **Fraud-labeled data** (Phase 2 concern, noted here for continuity): real confirmed-fraud
   examples are essentially unobtainable from scraped data since platforms remove them. The plan is
   to synthetically construct fraud by taking real legit listings and injecting known patterns
@@ -57,7 +65,7 @@ query-listing pairs exist to train on.
 
 Five independently testable layers:
 
-1. **Ingestion** — scrapers + Kaggle loaders, normalized into one common `RawListing` schema.
+1. **Ingestion** — scrapers, normalized into one common `RawListing` schema.
 2. **Enrichment** — geocoding, nearest-subway walking-distance computation, structured field
    normalization (price, rooms, area).
 3. **Embedding** — pretrained multilingual sentence embedding model (baseline), swappable for a
@@ -105,9 +113,8 @@ ever needed than what fits locally.
 
 ## Components
 
-- `ingest/` — one scraper module per source + a Kaggle loader, each emitting the same
-  `RawListing` schema. Scrapers are rate-limited and cache raw HTML so re-runs don't re-hit the
-  source.
+- `ingest/` — one scraper module per source, each emitting the same `RawListing` schema. Scrapers
+  are rate-limited and cache raw HTML so re-runs don't re-hit the source.
 - `enrich/` — geocoder (address → lat/lon), POI-distance calculator (lat/lon → nearest subway +
   walking minutes via OSRM), field normalizer (freeform price/area text → numeric).
 - `embed/` — wraps the sentence embedding model; takes normalized text, returns a vector.
@@ -151,7 +158,7 @@ ever needed than what fits locally.
 ## Data Flow
 
 **Ingestion time:**
-`Scraper/KaggleLoader → RawListing → Enricher (geocode + POI distance + field normalization) → Embedder (text → vector) → VectorStore.upsert(vector, payload)`
+`Scraper → RawListing → Enricher (geocode + POI distance + field normalization) → Embedder (text → vector) → VectorStore.upsert(vector, payload)`
 
 Each stage is a pure transformation with a typed input/output — testable in isolation, and
 replayable independently (e.g. re-embed everything after fine-tuning, without re-scraping or

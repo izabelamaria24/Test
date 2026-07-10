@@ -1,0 +1,24 @@
+- scrape romanian platforms like imobiliare.ro or storia
+- low-volume scrape for dev/research purpose
+- fraud detection: maybe find something on kaggle? on manually label it? synthetic data? labeled data?
+- licensed API later/partnership (costs?)
+- bucharest house price dataset for romanian market + generic ones for worldwide
+- embedding/retrieval pipeline + fraud-injection methodology on clean data => later point to real scraped data
+- synthetic fraud labeling would involve:
+    - take real listings as base truth
+    - generate fraud variants programmatically (eg reuse the same photo set across listings)
+    - diffusion model to generate fake photos (with label AI-generated image)
+    - apply price shifts far below the area/size norm and keeping the same description and etc
+    - multiple fake addresses
+    - real scam phrasing -> templates from consumer-protection sources r/Scams, FTC/EU alerts
+- APIs: PropAPIS (Starter 99$/mo), maybe free trial for getting bulk data without paying?
+- data pipeline + semantic search => scraping/Kaggle -> custom embeddings -> fine-tune -> vector DB -> NL query interface
+- multi-modal fraud/trust scoring -> CLIP-style image-text consistency + synthetic fraud dataset -> GNN fraud-ring detection
+- learned recommendations -> embeddings -> RL after real user interactions
+- for bucharest subway, use OpenStreetmap Overpass OSRM instance and compute walking route distances
+- fraud more for airbnb-like renting, risk eval for long term renting/purchasing
+- use red-dot seismically at-risk buildings site for data
+
+
+Messy IDEAS:
+B sounds good. this seems to be very important so we should choose wisely. should we involve google maps in this? or whatever so we know for sure the distance and so on. also it would be nice to see what important stuff you have around that (based on what you entered that you would wish like for example you need to be close to x park), maybe when you go to an estate's page, see other possibly important stuff around that. and also, maybe best fit for... x category of people demographically and not only, and also what would be useful especially in bucharest, for each estate have a danger score, exactly like the fraud one. how risky it is there on earthquakes (based on the zone, year of construction, number of floors, and maybe scrape/api of seismical risk i am 100% that there is a website with this info), and so on. and also for pricing, have a proper "how would this actually value" and what it would also be nice to have is the price adjusted to inflation. of course, those are all ideas/future features, but i had those in mind 

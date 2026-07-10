@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Phase 1 foundation from the design spec — ingest real Bucharest listings (from manually collected imobiliare.ro pages), enrich them with geocoding and subway-walking-distance, embed and store them in a vector DB, and answer natural-language queries via hybrid (structured filter + geospatial + dense vector) retrieval, with an offline evaluation harness.
+**Goal:** Build the Phase 1 foundation from the design spec — ingest real Bucharest listings (scraped from OLX.ro, which robots.txt explicitly permits and which has no bot-protection challenge, unlike imobiliare.ro/storia.ro — see Global Constraints), enrich them with geocoding and subway-walking-distance, embed and store them in a vector DB, and answer natural-language queries via hybrid (structured filter + geospatial + dense vector) retrieval, with an offline evaluation harness.
 
 **Architecture:** A modular-monolith Python package (`realestate`) with five interface-bound layers — `ingest`, `enrich`, `embed`, `store`, `query` — plus an `eval` layer for offline IR metrics. Each layer depends only on the abstractions of its neighbors (see Dependency Inversion in the spec), so components are swappable and independently testable.
 
@@ -10,7 +10,8 @@
 
 ## Global Constraints
 
-- No automated network scraping of imobiliare.ro/storia.ro — listing HTML is manually collected by the user and read from local files only (see spec: both sites actively block automated fetches; circumventing that is out of scope).
+- No automated scraping of imobiliare.ro/storia.ro — both actively block automated requests with a Cloudflare managed challenge (confirmed empirically: a plain request to an individual listing page returns a "Just a moment..." JS challenge page, not just a 403). Bypassing that requires browser-automation evasion techniques that are out of scope, full stop.
+- OLX.ro is the real-data source instead: its `robots.txt` explicitly allows crawling (`Allow: /`, no listing-page disallow), it returns plain 200 responses with no bot-protection challenge, and each listing page embeds a clean JSON blob (`window.__PRERENDERED_STATE__`) with structured fields — no fragile CSS-selector scraping needed. Scraping is still rate-limited (2s between requests) as ordinary good practice, not because it's required to get past a defense.
 - Geocoding uses OpenStreetMap Nominatim's public instance — max 1 request/second, custom `User-Agent` header required, results cached to disk (Nominatim usage policy).
 - Subway-distance uses OpenStreetMap Overpass (station locations) + a self-hosted OSRM instance (walking routes) — not Google Maps.
 - All LLM inference (query parsing, eval query generation) runs locally via Ollama — no external LLM API calls in this plan.
@@ -136,7 +137,7 @@ git commit -m "chore: scaffold realestate package"
 
 **Interfaces:**
 - Produces: `RawListing(external_id: str, title: str, description: str, price_raw: str, address_raw: str, specs: dict[str, str], image_urls: list[str], source_file: str)`
-- Produces: `EnrichedListing(external_id: str, title: str, description: str, price_eur: float, rooms: int | None, built_area_sqm: float | None, bathrooms: int | None, construction_material: str | None, building_type: str | None, floor_regime: str | None, address_text: str, latitude: float | None, longitude: float | None, location_confidence: str, nearest_subway_station: str | None, subway_walking_minutes: float | None, image_urls: list[str])`
+- Produces: `EnrichedListing(external_id: str, title: str, description: str, price_eur: float, rooms: int | None, built_area_sqm: float | None, floor_number: int | None, construction_year_range: str | None, layout_type: str | None, address_text: str, latitude: float | None, longitude: float | None, location_confidence: str, nearest_subway_station: str | None, subway_walking_minutes: float | None, image_urls: list[str])`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -147,32 +148,31 @@ from realestate.models import RawListing, EnrichedListing
 
 def test_raw_listing_construction():
     listing = RawListing(
-        external_id="275727717",
-        title="Garsoniera 40mp in Centrul Istoric",
-        description="Vanzare garsoniera...",
-        price_raw="135.000 €",
-        address_raw="Centrul Istoric, Bucuresti",
-        specs={"Suprafata construita:": "50 mp"},
-        image_urls=["https://i.roamcdn.net/prop/imo/example.jpg"],
-        source_file="275727717.html",
+        external_id="304473136",
+        title="Vand apartament 2 camere TITAN",
+        description="Direct proprietar, vand apartament 2 camere...",
+        price_raw="100.000 €",
+        address_raw="Bucuresti - Ilfov, Bucuresti, Sectorul 3",
+        specs={"Suprafata utila": "48 m²"},
+        image_urls=["https://frankfurt.apollo.olxcdn.com:443/v1/files/example/image"],
+        source_file="304473136.html",
     )
-    assert listing.external_id == "275727717"
-    assert listing.specs["Suprafata construita:"] == "50 mp"
+    assert listing.external_id == "304473136"
+    assert listing.specs["Suprafata utila"] == "48 m²"
 
 
 def test_enriched_listing_defaults_for_missing_location():
     listing = EnrichedListing(
-        external_id="275727717",
-        title="Garsoniera 40mp",
-        description="Vanzare garsoniera...",
-        price_eur=135000.0,
-        rooms=1,
-        built_area_sqm=50.0,
-        bathrooms=1,
-        construction_material="Caramida",
-        building_type="Bloc de apartamente",
-        floor_regime="P+2E",
-        address_text="Centrul Istoric, Bucuresti",
+        external_id="304473136",
+        title="Vand apartament 2 camere TITAN",
+        description="Direct proprietar, vand apartament 2 camere...",
+        price_eur=100000.0,
+        rooms=2,
+        built_area_sqm=48.0,
+        floor_number=3,
+        construction_year_range="1977 – 1990",
+        layout_type="Decomandat",
+        address_text="Bucuresti - Ilfov, Bucuresti, Sectorul 3",
         latitude=None,
         longitude=None,
         location_confidence="low_confidence_location",
@@ -214,10 +214,9 @@ class EnrichedListing(BaseModel):
     price_eur: float
     rooms: int | None
     built_area_sqm: float | None
-    bathrooms: int | None
-    construction_material: str | None
-    building_type: str | None
-    floor_regime: str | None
+    floor_number: int | None
+    construction_year_range: str | None
+    layout_type: str | None
     address_text: str
     latitude: float | None
     longitude: float | None
@@ -241,186 +240,165 @@ git commit -m "feat: add RawListing and EnrichedListing schemas"
 
 ---
 
-### Task 3: Imobiliare.ro HTML parser
+### Task 3: OLX.ro listing JSON parser
 
-This is grounded in real HTML fragments captured directly from a live imobiliare.ro listing page
-(`https://www.imobiliare.ro/oferta/garsoniera-de-vanzare-ultracentral-centrul-istoric-40mp-275727717`),
-not guessed selectors.
+OLX embeds each listing's full structured data as JSON in a `window.__PRERENDERED_STATE__= "...";`
+assignment in the page `<script>` — a JSON string literal containing escaped JSON (decode twice).
+This was verified directly against a live listing page, not guessed: real fields are `id`, `title`,
+`description` (HTML-formatted), `price.regularPrice.{value,currencySymbol}`, `location.pathName`,
+`photos` (list of image URLs), and `params` (list of `{name, value}` spec rows — e.g. `Suprafata
+utila`, `Etaj`, `An constructie`, `Compartimentare`).
 
 **Files:**
 - Create: `src/realestate/ingest/__init__.py`
-- Create: `src/realestate/ingest/imobiliare_parser.py`
-- Test: `tests/ingest/test_imobiliare_parser.py`
+- Create: `src/realestate/ingest/olx_parser.py`
+- Test: `tests/ingest/test_olx_parser.py`
 
 **Interfaces:**
 - Consumes: `RawListing` from `realestate.models`
-- Produces: `parse_imobiliare_html(html: str, external_id: str) -> RawListing`
+- Produces: `parse_olx_listing_html(html: str, external_id: str) -> RawListing`
 
-- [ ] **Step 1: Write the failing test using a real captured fixture**
+- [ ] **Step 1: Write the failing test using a real, verified schema**
 
 ```python
-# tests/ingest/test_imobiliare_parser.py
+# tests/ingest/test_olx_parser.py
+import json
 import pytest
-from realestate.ingest.imobiliare_parser import parse_imobiliare_html
+from realestate.ingest.olx_parser import parse_olx_listing_html
 
-# This fixture assembles real HTML fragments captured from a live imobiliare.ro
-# listing page — not synthesized/guessed markup.
-SAMPLE_HTML = """
-<html><body>
-<img class="relative h-full w-full object-contain"
-     src="https://i.roamcdn.net/prop/imo/gallery-main-900w-watermark/example1.jpg"
-     title="Garsoniera 40mp in Centrul Istoric - Str. Selari nr. 2, imobil fara risc seismic"
-     alt="Garsoniera 40mp in Centrul Istoric" width="375" height="270">
-<img class="relative h-full w-full object-contain"
-     src="https://i.roamcdn.net/prop/imo/gallery-main-900w-watermark/example2.jpg"
-     title="Garsoniera 40mp in Centrul Istoric - Str. Selari nr. 2, imobil fara risc seismic"
-     alt="Garsoniera 40mp in Centrul Istoric" width="375" height="270">
+# Fields below mirror the real structure of window.__PRERENDERED_STATE__ verified against
+# a live OLX.ro listing page — not a guessed schema. Building the fixture via json.dumps
+# (rather than hand-writing escaped JSON) keeps the double-encoding correct.
+SAMPLE_AD = {
+    "id": 304473136,
+    "title": "Vand apartament 2 camere TITAN",
+    "description": (
+        "Direct proprietar !<br />\nVand apartament 2 camere decomandat<br />\n"
+        "* Suprafata utila 48 utili"
+    ),
+    "price": {
+        "regularPrice": {"value": 100000, "currencyCode": "EUR", "currencySymbol": "€"}
+    },
+    "location": {"pathName": "Bucuresti - Ilfov, Bucuresti, Sectorul 3"},
+    "params": [
+        {"key": "compartimentare", "name": "Compartimentare", "value": "Decomandat"},
+        {"key": "m", "name": "Suprafata utila", "value": "48 m²"},
+        {"key": "constructie", "name": "An constructie", "value": "1977 – 1990"},
+        {"key": "floor", "name": "Etaj", "value": "3"},
+    ],
+    "photos": ["https://frankfurt.apollo.olxcdn.com:443/v1/files/dlbik2gpbb3j1-RO/image;s=750x1000"],
+}
 
-<div class="mb-1 flex flex-nowrap items-end space-x-1 md:mb-0" aria-label="price">
-  <span class="text-xl font-semibold leading-none md:text-xxl md:font-extrabold">135.000 &euro;</span>
-</div>
 
-<p class="mb-2 flex items-center text-sm text-gray-500 md:hidden" data-cy="listing-address">
-    Centrul Istoric, Bucuresti
-</p>
+def _build_sample_html(ad_data: dict) -> str:
+    inner_json_text = json.dumps({"ad": {"ad": ad_data}}, ensure_ascii=False)
+    js_string_literal = json.dumps(inner_json_text, ensure_ascii=False)
+    return (
+        "<html><head><script>window.__PRERENDERED_STATE__= "
+        f"{js_string_literal};\n</script></head><body></body></html>"
+    )
 
-<div class="readable clamped text-content mb-0 whitespace-pre-line text-justify md:mb-2"
-     id="truncatedDescription">
-    Va propunem spre vanzare o garsoniera situata in Centrul Istoric.
 
-    Caracteristici:
-    Suprafata utila: 40 mp
-</div>
-
-<section class="listing-specifications-component px-3 py-3" data-cy="basic-info-section">
-  <div class="w-full">
-    <div class="grid w-full grid-cols-1 gap-x-2 md:grid-cols-2">
-      <div class="flex w-full justify-between gap-x-2 border-b border-gray-200 py-3">
-        <span class="flex shrink-0 text-sm text-grey-550">Suprafata construita:</span>
-        <span class="flex text-sm font-bold text-grey-550">50 mp</span>
-      </div>
-      <div class="flex w-full justify-between gap-x-2 border-b border-gray-200 py-3">
-        <span class="flex shrink-0 text-sm text-grey-550">Nr. bai:</span>
-        <span class="flex text-sm font-bold text-grey-550">1</span>
-      </div>
-      <div class="flex w-full justify-between gap-x-2 border-b border-gray-200 py-3">
-        <span class="flex shrink-0 text-sm text-grey-550">Structura rezistenta:</span>
-        <span class="flex text-sm font-bold text-grey-550">Caramida</span>
-      </div>
-    </div>
-  </div>
-</section>
-</body></html>
-"""
+SAMPLE_HTML = _build_sample_html(SAMPLE_AD)
 
 
 def test_parses_price():
-    listing = parse_imobiliare_html(SAMPLE_HTML, external_id="275727717")
-    assert listing.price_raw == "135.000 €"
+    listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
+    assert listing.price_raw == "100.000 €"
 
 
-def test_parses_address():
-    listing = parse_imobiliare_html(SAMPLE_HTML, external_id="275727717")
-    assert listing.address_raw == "Centrul Istoric, Bucuresti"
+def test_parses_title_and_strips_html_from_description():
+    listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
+    assert listing.title == "Vand apartament 2 camere TITAN"
+    assert "Suprafata utila 48 utili" in listing.description
+    assert "<br" not in listing.description
 
 
-def test_parses_title_from_image_attribute():
-    listing = parse_imobiliare_html(SAMPLE_HTML, external_id="275727717")
-    assert listing.title == "Garsoniera 40mp in Centrul Istoric - Str. Selari nr. 2, imobil fara risc seismic"
+def test_parses_address_from_location_pathname():
+    listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
+    assert listing.address_raw == "Bucuresti - Ilfov, Bucuresti, Sectorul 3"
 
 
-def test_parses_description_full_text_not_truncated():
-    listing = parse_imobiliare_html(SAMPLE_HTML, external_id="275727717")
-    assert "Suprafata utila: 40 mp" in listing.description
+def test_parses_specs_by_display_name():
+    listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
+    assert listing.specs["Suprafata utila"] == "48 m²"
+    assert listing.specs["Etaj"] == "3"
+    assert listing.specs["Compartimentare"] == "Decomandat"
 
 
-def test_parses_spec_rows():
-    listing = parse_imobiliare_html(SAMPLE_HTML, external_id="275727717")
-    assert listing.specs["Suprafata construita:"] == "50 mp"
-    assert listing.specs["Nr. bai:"] == "1"
-    assert listing.specs["Structura rezistenta:"] == "Caramida"
-
-
-def test_deduplicates_gallery_image_urls():
-    listing = parse_imobiliare_html(SAMPLE_HTML, external_id="275727717")
+def test_parses_image_urls():
+    listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
     assert listing.image_urls == [
-        "https://i.roamcdn.net/prop/imo/gallery-main-900w-watermark/example1.jpg",
-        "https://i.roamcdn.net/prop/imo/gallery-main-900w-watermark/example2.jpg",
+        "https://frankfurt.apollo.olxcdn.com:443/v1/files/dlbik2gpbb3j1-RO/image;s=750x1000"
     ]
 
 
-def test_raises_when_price_element_missing():
-    with pytest.raises(ValueError, match="price"):
-        parse_imobiliare_html("<html><body></body></html>", external_id="000")
+def test_raises_when_prerendered_state_missing():
+    with pytest.raises(ValueError, match="PRERENDERED_STATE"):
+        parse_olx_listing_html("<html><body>no state here</body></html>", external_id="000")
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/ingest/test_imobiliare_parser.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'realestate.ingest.imobiliare_parser'`
+Run: `pytest tests/ingest/test_olx_parser.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'realestate.ingest.olx_parser'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/realestate/ingest/imobiliare_parser.py
+# src/realestate/ingest/olx_parser.py
+import json
+
 from bs4 import BeautifulSoup
 from realestate.models import RawListing
 
+_STATE_PREFIX = "window.__PRERENDERED_STATE__= "
 
-def parse_imobiliare_html(html: str, external_id: str) -> RawListing:
-    soup = BeautifulSoup(html, "lxml")
 
-    price_container = soup.find(attrs={"aria-label": "price"})
-    price_el = price_container.find("span") if price_container else None
-    if price_el is None:
-        raise ValueError(f"listing {external_id}: price element not found")
-    price_raw = price_el.get_text(strip=True)
+def _extract_ad_json(html: str) -> dict:
+    start = html.find(_STATE_PREFIX)
+    if start == -1:
+        raise ValueError("PRERENDERED_STATE script assignment not found")
+    start += len(_STATE_PREFIX)
+    end = html.find(";\n", start)
+    if end == -1:
+        raise ValueError("could not find end of PRERENDERED_STATE assignment")
+    js_string_literal = html[start:end]
+    inner_json_text = json.loads(js_string_literal)  # un-escape the JS string
+    return json.loads(inner_json_text)  # parse the actual JSON payload
 
-    address_el = soup.find(attrs={"data-cy": "listing-address"})
-    if address_el is None:
-        raise ValueError(f"listing {external_id}: address element not found")
-    address_raw = address_el.get_text(strip=True)
 
-    description_el = soup.find(id="truncatedDescription")
-    if description_el is None:
-        raise ValueError(f"listing {external_id}: description element not found")
-    description = description_el.get_text(separator="\n", strip=True)
+def _clean_description(raw_html_description: str) -> str:
+    return BeautifulSoup(raw_html_description, "lxml").get_text(separator="\n").strip()
 
-    title_img = soup.find("img", attrs={"title": True})
-    if title_img is None:
-        raise ValueError(f"listing {external_id}: title not found (no img[title] element)")
-    title = title_img["title"].strip()
 
-    image_urls: list[str] = []
-    for img in soup.find_all("img", class_="object-contain", src=True):
-        if img["src"] not in image_urls:
-            image_urls.append(img["src"])
+def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
+    state = _extract_ad_json(html)
+    ad = state["ad"]["ad"]
 
-    specs: dict[str, str] = {}
-    specs_section = soup.find(attrs={"data-cy": "basic-info-section"})
-    if specs_section is not None:
-        for row in specs_section.find_all("div", class_="justify-between"):
-            spans = row.find_all("span", recursive=False)
-            if len(spans) != 2:
-                continue
-            specs[spans[0].get_text(strip=True)] = spans[1].get_text(strip=True)
+    price_info = ad.get("price", {}).get("regularPrice")
+    if not price_info:
+        raise ValueError(f"listing {external_id}: no regular price found")
+    price_raw = f"{price_info['value']:,.0f} {price_info['currencySymbol']}".replace(",", ".")
+
+    specs = {param["name"]: param["value"] for param in ad.get("params", [])}
 
     return RawListing(
         external_id=external_id,
-        title=title,
-        description=description,
+        title=ad.get("title", ""),
+        description=_clean_description(ad.get("description", "")),
         price_raw=price_raw,
-        address_raw=address_raw,
+        address_raw=ad.get("location", {}).get("pathName", ""),
         specs=specs,
-        image_urls=image_urls,
+        image_urls=ad.get("photos", []),
         source_file=f"{external_id}.html",
     )
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest tests/ingest/test_imobiliare_parser.py -v`
-Expected: PASS (7 passed)
+Run: `pytest tests/ingest/test_olx_parser.py -v`
+Expected: PASS (6 passed)
 
 - [ ] **Step 5: Commit**
 
@@ -428,78 +406,248 @@ Expected: PASS (7 passed)
 mkdir -p tests/ingest
 touch tests/ingest/__init__.py
 git add src/realestate/ingest/ tests/ingest/
-git commit -m "feat: parse imobiliare.ro listing HTML into RawListing"
+git commit -m "feat: parse OLX.ro listing JSON into RawListing"
 ```
 
 ---
 
-### Task 4: Manual HTML collection loader
+### Task 4: OLX.ro category scraper + directory loader
+
+Two responsibilities: (a) paginate OLX's Bucharest apartment-sale category pages (confirmed
+working via plain HTTP GET, `?page=N` pagination verified against live pages) to discover listing
+URLs and download each one's HTML to disk, idempotently and rate-limited; (b) load a directory of
+already-downloaded HTML files and parse them, quarantining failures rather than crashing.
 
 **Files:**
-- Create: `src/realestate/ingest/manual_loader.py`
-- Test: `tests/ingest/test_manual_loader.py`
+- Create: `src/realestate/ingest/olx_scraper.py`
+- Create: `src/realestate/ingest/olx_loader.py`
+- Test: `tests/ingest/test_olx_scraper.py`
+- Test: `tests/ingest/test_olx_loader.py`
 
 **Interfaces:**
-- Consumes: `parse_imobiliare_html` from Task 3
-- Produces: `load_manual_html_directory(directory: Path) -> tuple[list[RawListing], list[tuple[Path, str]]]` — returns `(listings, failures)`, where `failures` is `(file_path, error_message)` for any file that failed to parse. Failures never raise — that's the pipeline's quarantine mechanism (see spec's Error Handling section).
+- Consumes: `parse_olx_listing_html` from Task 3
+- Produces: `fetch_listing_urls_from_category(page: int, *, session) -> list[str]`
+- Produces: `listing_id_from_url(url: str) -> str`
+- Produces: `download_listings(target_count: int, output_dir: Path, *, session=None, rate_limit_seconds=2.0, max_pages=50) -> list[str]` (returns newly downloaded listing ids; skips ones already on disk)
+- Produces: `load_olx_html_directory(directory: Path) -> tuple[list[RawListing], list[tuple[Path, str]]]`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing scraper test (network calls injected via a fake session)**
 
 ```python
-# tests/ingest/test_manual_loader.py
+# tests/ingest/test_olx_scraper.py
 from pathlib import Path
-from realestate.ingest.manual_loader import load_manual_html_directory
+from realestate.ingest.olx_scraper import (
+    download_listings,
+    fetch_listing_urls_from_category,
+    listing_id_from_url,
+)
 
-VALID_HTML = """
+CATEGORY_PAGE_HTML = """
 <html><body>
-<img class="relative h-full w-full object-contain" src="https://example.com/a.jpg"
-     title="Test listing title">
-<div aria-label="price"><span>100.000 &euro;</span></div>
-<p data-cy="listing-address">Some Area, Bucuresti</p>
-<div id="truncatedDescription">Some description text.</div>
+<a href="/d/oferta/apartament-2-camere-titan-IDkBxn2.html?search_reason=organic">Ad 1</a>
+<a href="/d/oferta/apartament-2-camere-titan-IDkBxn2.html?search_reason=organic">Ad 1 dup</a>
+<a href="/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html">Ad 2</a>
 </body></html>
 """
 
-MALFORMED_HTML = "<html><body><p>no price here</p></body></html>"
+LISTING_HTML_TEMPLATE = "<html><body>listing {listing_id}</body></html>"
 
 
-def test_loads_valid_html_files(tmp_path: Path):
-    (tmp_path / "111.html").write_text(VALID_HTML, encoding="utf-8")
+class FakeResponse:
+    def __init__(self, text: str, status_code: int = 200):
+        self.text = text
+        self.status_code = status_code
 
-    listings, failures = load_manual_html_directory(tmp_path)
-
-    assert len(listings) == 1
-    assert listings[0].external_id == "111"
-    assert failures == []
+    def raise_for_status(self):
+        if self.status_code != 200:
+            raise RuntimeError(f"status {self.status_code}")
 
 
-def test_quarantines_malformed_files_instead_of_raising(tmp_path: Path):
-    (tmp_path / "111.html").write_text(VALID_HTML, encoding="utf-8")
-    (tmp_path / "222.html").write_text(MALFORMED_HTML, encoding="utf-8")
+class FakeSession:
+    def __init__(self, category_pages: dict[int, str], listing_pages: dict[str, str]):
+        self._category_pages = category_pages
+        self._listing_pages = listing_pages
 
-    listings, failures = load_manual_html_directory(tmp_path)
+    def get(self, url, params=None, headers=None, timeout=None):
+        if params and "page" in params:
+            return FakeResponse(self._category_pages.get(params["page"], ""))
+        return FakeResponse(self._listing_pages.get(url, ""), status_code=200 if url in self._listing_pages else 404)
 
-    assert len(listings) == 1
-    assert len(failures) == 1
-    assert failures[0][0].name == "222.html"
-    assert "price" in failures[0][1]
+
+def test_listing_id_from_url_extracts_trailing_id():
+    assert listing_id_from_url("https://www.olx.ro/d/oferta/apartament-IDkBxn2.html") == "kBxn2"
+
+
+def test_fetch_listing_urls_from_category_dedupes_and_builds_full_urls():
+    session = FakeSession(category_pages={1: CATEGORY_PAGE_HTML}, listing_pages={})
+    urls = fetch_listing_urls_from_category(1, session=session)
+    assert urls == [
+        "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html",
+        "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html",
+    ]
+
+
+def test_download_listings_writes_files_and_stops_at_target_count(tmp_path: Path):
+    session = FakeSession(
+        category_pages={1: CATEGORY_PAGE_HTML},
+        listing_pages={
+            "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html": LISTING_HTML_TEMPLATE.format(listing_id="kBxn2"),
+            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(listing_id="kHrfc"),
+        },
+    )
+
+    downloaded = download_listings(1, tmp_path, session=session, rate_limit_seconds=0)
+
+    assert len(downloaded) == 1
+    assert len(list(tmp_path.glob("*.html"))) == 1
+
+
+def test_download_listings_is_idempotent_and_skips_existing_files(tmp_path: Path):
+    (tmp_path / "kBxn2.html").write_text("already here", encoding="utf-8")
+    session = FakeSession(
+        category_pages={1: CATEGORY_PAGE_HTML},
+        listing_pages={
+            "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html": LISTING_HTML_TEMPLATE.format(listing_id="kBxn2"),
+            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(listing_id="kHrfc"),
+        },
+    )
+
+    downloaded = download_listings(2, tmp_path, session=session, rate_limit_seconds=0)
+
+    assert "kBxn2" not in downloaded
+    assert (tmp_path / "kBxn2.html").read_text(encoding="utf-8") == "already here"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/ingest/test_manual_loader.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'realestate.ingest.manual_loader'`
+Run: `pytest tests/ingest/test_olx_scraper.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'realestate.ingest.olx_scraper'`
 
-- [ ] **Step 3: Write the implementation**
+- [ ] **Step 3: Write the scraper implementation**
 
 ```python
-# src/realestate/ingest/manual_loader.py
+# src/realestate/ingest/olx_scraper.py
+import re
+import time
 from pathlib import Path
-from realestate.ingest.imobiliare_parser import parse_imobiliare_html
+
+import requests
+
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
+CATEGORY_URL = "https://www.olx.ro/imobiliare/apartamente-garsoniere-de-vanzare/bucuresti/"
+
+_LISTING_HREF_RE = re.compile(r'href="(/d/oferta/[a-zA-Z0-9_-]+\.html)')
+_LISTING_ID_RE = re.compile(r"-ID([a-zA-Z0-9]+)\.html$")
+
+
+def fetch_listing_urls_from_category(page: int, *, session: requests.Session) -> list[str]:
+    response = session.get(
+        CATEGORY_URL, params={"page": page}, headers={"User-Agent": USER_AGENT}, timeout=15
+    )
+    hrefs = sorted(set(_LISTING_HREF_RE.findall(response.text)))
+    return [f"https://www.olx.ro{href}" for href in hrefs]
+
+
+def listing_id_from_url(url: str) -> str:
+    match = _LISTING_ID_RE.search(url)
+    if not match:
+        raise ValueError(f"could not extract listing id from URL: {url}")
+    return match.group(1)
+
+
+def download_listings(
+    target_count: int,
+    output_dir: Path,
+    *,
+    session: requests.Session | None = None,
+    rate_limit_seconds: float = 2.0,
+    max_pages: int = 50,
+) -> list[str]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    session = session or requests.Session()
+
+    downloaded_ids: list[str] = []
+    for page in range(1, max_pages + 1):
+        if len(list(output_dir.glob("*.html"))) >= target_count:
+            break
+
+        listing_urls = fetch_listing_urls_from_category(page, session=session)
+        if not listing_urls:
+            break
+
+        for url in listing_urls:
+            if len(list(output_dir.glob("*.html"))) >= target_count:
+                break
+            listing_id = listing_id_from_url(url)
+            file_path = output_dir / f"{listing_id}.html"
+            if file_path.exists():
+                continue
+
+            response = session.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+            time.sleep(rate_limit_seconds)
+            if response.status_code != 200:
+                continue
+            file_path.write_text(response.text, encoding="utf-8")
+            downloaded_ids.append(listing_id)
+
+    return downloaded_ids
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/ingest/test_olx_scraper.py -v`
+Expected: PASS (4 passed)
+
+- [ ] **Step 5: Write the failing loader test**
+
+```python
+# tests/ingest/test_olx_loader.py
+from pathlib import Path
+from realestate.ingest.olx_loader import load_olx_html_directory
+from tests.ingest.test_olx_parser import SAMPLE_HTML
+
+MALFORMED_HTML = "<html><body>no prerendered state here</body></html>"
+
+
+def test_loads_valid_html_files(tmp_path: Path):
+    (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
+
+    listings, failures = load_olx_html_directory(tmp_path)
+
+    assert len(listings) == 1
+    assert listings[0].external_id == "304473136"
+    assert failures == []
+
+
+def test_quarantines_malformed_files_instead_of_raising(tmp_path: Path):
+    (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
+    (tmp_path / "999.html").write_text(MALFORMED_HTML, encoding="utf-8")
+
+    listings, failures = load_olx_html_directory(tmp_path)
+
+    assert len(listings) == 1
+    assert len(failures) == 1
+    assert failures[0][0].name == "999.html"
+```
+
+- [ ] **Step 6: Run test to verify it fails**
+
+Run: `pytest tests/ingest/test_olx_loader.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'realestate.ingest.olx_loader'`
+
+- [ ] **Step 7: Write the loader implementation**
+
+```python
+# src/realestate/ingest/olx_loader.py
+from pathlib import Path
+from realestate.ingest.olx_parser import parse_olx_listing_html
 from realestate.models import RawListing
 
 
-def load_manual_html_directory(
+def load_olx_html_directory(
     directory: Path,
 ) -> tuple[list[RawListing], list[tuple[Path, str]]]:
     listings: list[RawListing] = []
@@ -509,24 +657,38 @@ def load_manual_html_directory(
         external_id = html_file.stem
         try:
             html = html_file.read_text(encoding="utf-8")
-            listings.append(parse_imobiliare_html(html, external_id))
+            listings.append(parse_olx_listing_html(html, external_id))
         except Exception as exc:  # noqa: BLE001 - quarantine, don't crash the batch
             failures.append((html_file, str(exc)))
 
     return listings, failures
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 8: Run both test files to verify everything passes**
 
-Run: `pytest tests/ingest/test_manual_loader.py -v`
-Expected: PASS (2 passed)
+Run: `pytest tests/ingest/ -v`
+Expected: PASS (all tests across Task 3 and Task 4)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/realestate/ingest/manual_loader.py tests/ingest/test_manual_loader.py
-git commit -m "feat: load a directory of manually collected listing HTML files"
+git add src/realestate/ingest/olx_scraper.py src/realestate/ingest/olx_loader.py tests/ingest/test_olx_scraper.py tests/ingest/test_olx_loader.py
+git commit -m "feat: scrape OLX.ro category pages and load downloaded listings"
 ```
+
+- [ ] **Step 10: Manual smoke test — download real listings**
+
+Run:
+```python
+from pathlib import Path
+from realestate.ingest.olx_scraper import download_listings
+
+downloaded = download_listings(100, Path("data/raw/olx_html"))
+print(f"downloaded {len(downloaded)} new listings")
+```
+Expected: after a couple minutes (rate-limited at 2s/request), `data/raw/olx_html/` contains ~100
+`.html` files. If OLX's markup has changed since this was verified, some downloads may fail to
+parse later in Task 11 — that's what the quarantine mechanism is for.
 
 ---
 
@@ -540,7 +702,7 @@ git commit -m "feat: load a directory of manually collected listing HTML files"
 **Interfaces:**
 - Produces: `normalize_price_eur(price_raw: str) -> float`
 - Produces: `normalize_rooms(title: str) -> int | None`
-- Produces: `normalize_specs(specs: dict[str, str]) -> dict[str, object]` (keys: `built_area_sqm: float | None`, `bathrooms: int | None`, `kitchens: int | None`, `construction_material: str | None`, `building_type: str | None`, `transaction_type: str | None`, `floor_regime: str | None`, `payment_method: str | None`)
+- Produces: `normalize_specs(specs: dict[str, str]) -> dict[str, object]` (keys: `built_area_sqm: float | None`, `floor_number: int | None`, `construction_year_range: str | None`, `layout_type: str | None`)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -554,7 +716,7 @@ from realestate.enrich.normalizer import (
 
 
 def test_normalize_price_eur_parses_dotted_thousands():
-    assert normalize_price_eur("135.000 €") == 135000.0
+    assert normalize_price_eur("100.000 €") == 100000.0
 
 
 def test_normalize_rooms_detects_studio():
@@ -571,18 +733,20 @@ def test_normalize_rooms_returns_none_when_unknown():
 
 def test_normalize_specs_maps_known_labels():
     raw_specs = {
-        "Suprafata construita:": "50 mp",
-        "Nr. bai:": "1",
-        "Structura rezistenta:": "Caramida",
+        "Suprafata utila": "48 m²",
+        "Etaj": "3",
+        "An constructie": "1977 – 1990",
+        "Compartimentare": "Decomandat",
     }
     normalized = normalize_specs(raw_specs)
-    assert normalized["built_area_sqm"] == 50.0
-    assert normalized["bathrooms"] == 1
-    assert normalized["construction_material"] == "Caramida"
+    assert normalized["built_area_sqm"] == 48.0
+    assert normalized["floor_number"] == 3
+    assert normalized["construction_year_range"] == "1977 – 1990"
+    assert normalized["layout_type"] == "Decomandat"
 
 
 def test_normalize_specs_ignores_unknown_labels():
-    normalized = normalize_specs({"Un label necunoscut:": "valoare"})
+    normalized = normalize_specs({"Un label necunoscut": "valoare"})
     assert normalized == {}
 ```
 
@@ -598,17 +762,13 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'realestate.enrich.nor
 import re
 
 SPEC_LABEL_MAP: dict[str, str] = {
-    "Suprafata construita:": "built_area_sqm",
-    "Nr. bucatarii:": "kitchens",
-    "Nr. bai:": "bathrooms",
-    "Structura rezistenta:": "construction_material",
-    "Tip imobil:": "building_type",
-    "Tip tranzactie:": "transaction_type",
-    "Regim inaltime:": "floor_regime",
-    "Modalitate de plata:": "payment_method",
+    "Suprafata utila": "built_area_sqm",
+    "Etaj": "floor_number",
+    "An constructie": "construction_year_range",
+    "Compartimentare": "layout_type",
 }
 
-_NUMERIC_FIELDS = {"built_area_sqm", "bathrooms", "kitchens"}
+_NUMERIC_FIELDS = {"built_area_sqm", "floor_number"}
 
 
 def normalize_price_eur(price_raw: str) -> float:
@@ -638,7 +798,7 @@ def normalize_specs(specs: dict[str, str]) -> dict[str, object]:
         if field == "built_area_sqm":
             match = re.search(r"([\d.,]+)", raw_value)
             normalized[field] = float(match.group(1).replace(",", ".")) if match else None
-        elif field in ("bathrooms", "kitchens"):
+        elif field == "floor_number":
             match = re.search(r"(\d+)", raw_value)
             normalized[field] = int(match.group(1)) if match else None
         else:
@@ -646,11 +806,11 @@ def normalize_specs(specs: dict[str, str]) -> dict[str, object]:
     return normalized
 ```
 
-Note: the test fixtures above use plain ASCII labels (e.g. `"Nr. bai:"` not `"Nr. băi:"`) to keep this
-listing readable — when wiring this against real saved HTML in Task 8, verify the exact diacritics
-imobiliare.ro renders (`ă`, `ă`, `ț`) and adjust `SPEC_LABEL_MAP` keys to match exactly, since dict
-lookup is exact-match. Add a step there to print `raw_listing.specs.keys()` against one real saved
-file and confirm the map's keys line up before trusting this silently drops unmapped labels.
+Note: `SPEC_LABEL_MAP` keys are the exact `name` values OLX's own JSON gives per param (verified
+directly against a live listing) — not translated/guessed labels, so this should hold up better
+than a scrape targeting rendered HTML text would. Still worth a spot-check against a handful of
+real downloaded listings in Task 11: OLX may use different `params` keys for other property types
+(houses, land) than the apartment listing this was verified against.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -993,14 +1153,14 @@ from realestate.enrich.pipeline import enrich_listing
 from realestate.models import RawListing
 
 RAW = RawListing(
-    external_id="275727717",
-    title="Garsoniera 40mp in Centrul Istoric",
-    description="Vanzare garsoniera in Centrul Istoric.",
-    price_raw="135.000 €",
-    address_raw="Centrul Istoric, Bucuresti",
-    specs={"Suprafata construita:": "50 mp", "Nr. bai:": "1"},
+    external_id="304473136",
+    title="Vand apartament 2 camere TITAN",
+    description="Direct proprietar, apartament 2 camere decomandat.",
+    price_raw="100.000 €",
+    address_raw="Bucuresti - Ilfov, Bucuresti, Sectorul 3",
+    specs={"Suprafata utila": "48 m²", "Etaj": "3"},
     image_urls=["https://example.com/a.jpg"],
-    source_file="275727717.html",
+    source_file="304473136.html",
 )
 
 STATIONS = [{"name": "Universitate", "lat": 44.4356, "lon": 26.1023}]
@@ -1019,10 +1179,10 @@ def test_enrich_listing_with_successful_geocode(tmp_path):
         RAW, geocoder=geocoder, stations=STATIONS, nearest_station_fn=fake_nearest_station
     )
 
-    assert enriched.price_eur == 135000.0
-    assert enriched.rooms == 1
-    assert enriched.built_area_sqm == 50.0
-    assert enriched.bathrooms == 1
+    assert enriched.price_eur == 100000.0
+    assert enriched.rooms == 2
+    assert enriched.built_area_sqm == 48.0
+    assert enriched.floor_number == 3
     assert enriched.latitude == 44.4325
     assert enriched.location_confidence == "ok"
     assert enriched.nearest_subway_station == "Universitate"
@@ -1089,10 +1249,9 @@ def enrich_listing(
         price_eur=normalize_price_eur(raw.price_raw),
         rooms=normalize_rooms(raw.title),
         built_area_sqm=specs.get("built_area_sqm"),
-        bathrooms=specs.get("bathrooms"),
-        construction_material=specs.get("construction_material"),
-        building_type=specs.get("building_type"),
-        floor_regime=specs.get("floor_regime"),
+        floor_number=specs.get("floor_number"),
+        construction_year_range=specs.get("construction_year_range"),
+        layout_type=specs.get("layout_type"),
         address_text=raw.address_raw,
         latitude=latitude,
         longitude=longitude,
@@ -1407,7 +1566,7 @@ git commit -m "feat: add Qdrant-backed vector store with structured filtering"
 - Test: `tests/test_ingestion_pipeline.py`
 
 **Interfaces:**
-- Consumes: `load_manual_html_directory` (Task 4), `enrich_listing` (Task 8), `Embedder` (Task 9), `VectorStore` (Task 10)
+- Consumes: `load_olx_html_directory` (Task 4), `enrich_listing` (Task 8), `Embedder` (Task 9), `VectorStore` (Task 10)
 - Produces: `run_ingestion(html_dir: Path, *, geocoder, stations, embedder: Embedder, store: VectorStore) -> IngestionReport` where `IngestionReport` has `.succeeded: int`, `.parse_failures: list[tuple[Path, str]]`
 
 - [ ] **Step 1: Write the failing test**
@@ -1418,16 +1577,7 @@ from pathlib import Path
 
 from realestate.enrich.geocoder import CachedGeocoder, GeocodeResult
 from realestate.ingestion_pipeline import run_ingestion
-
-VALID_HTML = """
-<html><body>
-<img class="relative h-full w-full object-contain" src="https://example.com/a.jpg"
-     title="Garsoniera 40mp in Centrul Istoric">
-<div aria-label="price"><span>135.000 &euro;</span></div>
-<p data-cy="listing-address">Centrul Istoric, Bucuresti</p>
-<div id="truncatedDescription">Vanzare garsoniera in Centrul Istoric.</div>
-</body></html>
-"""
+from tests.ingest.test_olx_parser import SAMPLE_HTML
 
 
 class FakeEmbedder:
@@ -1450,7 +1600,7 @@ class FakeStore:
 
 
 def test_run_ingestion_embeds_and_stores_valid_listings(tmp_path: Path):
-    (tmp_path / "275727717.html").write_text(VALID_HTML, encoding="utf-8")
+    (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
     (tmp_path / "bad.html").write_text("<html></html>", encoding="utf-8")
 
     geocoder = CachedGeocoder(
@@ -1469,8 +1619,8 @@ def test_run_ingestion_embeds_and_stores_valid_listings(tmp_path: Path):
 
     assert report.succeeded == 1
     assert len(report.parse_failures) == 1
-    assert store.upserted[0][0] == "275727717"
-    assert store.upserted[0][2]["price_eur"] == 135000.0
+    assert store.upserted[0][0] == "304473136"
+    assert store.upserted[0][2]["price_eur"] == 100000.0
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1488,7 +1638,7 @@ from pathlib import Path
 from realestate.embed.base import Embedder
 from realestate.enrich.geocoder import CachedGeocoder
 from realestate.enrich.pipeline import enrich_listing
-from realestate.ingest.manual_loader import load_manual_html_directory
+from realestate.ingest.olx_loader import load_olx_html_directory
 from realestate.store.base import VectorStore
 
 
@@ -1506,7 +1656,7 @@ def run_ingestion(
     embedder: Embedder,
     store: VectorStore,
 ) -> IngestionReport:
-    raw_listings, parse_failures = load_manual_html_directory(html_dir)
+    raw_listings, parse_failures = load_olx_html_directory(html_dir)
 
     succeeded = 0
     for raw in raw_listings:
@@ -1529,11 +1679,14 @@ Expected: PASS (1 passed)
 
 - [ ] **Step 5: Write the real CLI entry point**
 
+This scrapes fresh listings (skipping any already downloaded, per Task 4's idempotency) and then
+runs them through the full pipeline in one command.
+
 ```python
 # scripts/run_ingestion.py
-"""Run the full ingestion pipeline against manually collected imobiliare.ro HTML.
+"""Scrape OLX.ro listings (if needed) and run the full ingestion pipeline.
 
-Usage: python scripts/run_ingestion.py data/raw/imobiliare_html
+Usage: python scripts/run_ingestion.py 100
 """
 
 import sys
@@ -1542,11 +1695,17 @@ from pathlib import Path
 from realestate.embed.sentence_embedder import MultilingualE5Embedder
 from realestate.enrich.geocoder import CachedGeocoder
 from realestate.enrich.poi import fetch_bucharest_subway_stations
+from realestate.ingest.olx_scraper import download_listings
 from realestate.ingestion_pipeline import run_ingestion
 from realestate.store.qdrant_store import QdrantListingStore
 
 if __name__ == "__main__":
-    html_dir = Path(sys.argv[1])
+    target_count = int(sys.argv[1])
+    html_dir = Path("data/raw/olx_html")
+
+    newly_downloaded = download_listings(target_count, html_dir)
+    print(f"Downloaded {len(newly_downloaded)} new listings (target: {target_count} total on disk).")
+
     geocoder = CachedGeocoder(cache_path=Path("data/cache/geocode_cache.json"))
     stations = fetch_bucharest_subway_stations()
     embedder = MultilingualE5Embedder(device="mps")
@@ -1870,21 +2029,20 @@ from realestate.eval.generate_queries import generate_eval_query
 from realestate.models import EnrichedListing
 
 LISTING = EnrichedListing(
-    external_id="275727717",
-    title="Garsoniera 40mp in Centrul Istoric",
-    description="Garsoniera luminoasa, parchet, in Centrul Istoric.",
-    price_eur=135000.0,
-    rooms=1,
-    built_area_sqm=50.0,
-    bathrooms=1,
-    construction_material="Caramida",
-    building_type="Bloc de apartamente",
-    floor_regime="P+2E",
-    address_text="Centrul Istoric, Bucuresti",
+    external_id="304473136",
+    title="Vand apartament 2 camere TITAN",
+    description="Apartament luminos, decomandat, in Titan.",
+    price_eur=100000.0,
+    rooms=2,
+    built_area_sqm=48.0,
+    floor_number=3,
+    construction_year_range="1977 – 1990",
+    layout_type="Decomandat",
+    address_text="Bucuresti - Ilfov, Bucuresti, Sectorul 3",
     latitude=44.43,
     longitude=26.10,
     location_confidence="ok",
-    nearest_subway_station="Universitate",
+    nearest_subway_station="Titan",
     subway_walking_minutes=6.5,
     image_urls=[],
 )
@@ -1895,14 +2053,14 @@ def test_generate_eval_query_uses_listing_details_in_the_prompt():
 
     def fake_generate(prompt: str) -> str:
         captured_prompts.append(prompt)
-        return "Bright studio near Universitate subway station"
+        return "Bright 2-room apartment near Titan subway station"
 
     pair = generate_eval_query(LISTING, generate_fn=fake_generate)
 
-    assert pair.relevant_listing_id == "275727717"
-    assert pair.query == "Bright studio near Universitate subway station"
-    assert "Centrul Istoric" in captured_prompts[0]
-    assert "Universitate" in captured_prompts[0]
+    assert pair.relevant_listing_id == "304473136"
+    assert pair.query == "Bright 2-room apartment near Titan subway station"
+    assert "Sectorul 3" in captured_prompts[0]
+    assert "Titan" in captured_prompts[0]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -2155,11 +2313,17 @@ git commit -m "feat: add IR evaluation metrics and end-to-end eval harness"
   retrieval (Tasks 12-13), evaluation harness (Tasks 14-15) — all spec sections have a
   corresponding task. UI, fraud scoring, and RL recommendations are explicitly out of scope per
   the spec's Future Phases Backlog, and are not tasked here.
+- **Data source revision:** the spec originally scoped imobiliare.ro/storia.ro scraping; both were
+  found to run an active Cloudflare managed challenge on real requests (verified empirically, not
+  assumed), so Tasks 3-4 and the CLI in Task 11 were rewritten around OLX.ro instead — confirmed
+  scrapable (robots.txt allows it, plain 200 responses, clean embedded JSON per listing). All
+  downstream field names (`EnrichedListing`, `SPEC_LABEL_MAP`, eval fixtures) were updated to match
+  OLX's actual schema rather than imobiliare's, and cross-checked for staleness across Tasks 2, 5,
+  8, 11, and 14.
 - **Type consistency:** `Embedder`/`VectorStore` protocol method signatures (Tasks 9, 10) match
   their usage in `ingestion_pipeline.py` (Task 11) and `retrieval.py` (Task 13). `EnrichedListing`
-  fields (Task 2) match what `enrich_listing` (Task 8) constructs and what `generate_eval_query`
-  (Task 14) reads.
-- **Known follow-up baked into Task 5:** the `SPEC_LABEL_MAP` diacritics must be verified against
-  real saved HTML before Task 8 is trusted end-to-end — flagged inline in that task rather than
-  glossed over, since silently dropping unmapped spec labels is exactly the kind of thing that
-  looks like it works until you check real data.
+  fields (Task 2: `floor_number`, `construction_year_range`, `layout_type`) match what
+  `enrich_listing` (Task 8) constructs and what `generate_eval_query` (Task 14) reads.
+- **Known follow-up baked into Task 4:** OLX's `params` schema was verified against one apartment
+  listing; other property types (houses, land) may use different param keys, flagged inline as a
+  spot-check to do once real listings are downloaded, rather than assumed to generalize.
