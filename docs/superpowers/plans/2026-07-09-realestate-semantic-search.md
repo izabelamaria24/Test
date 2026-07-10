@@ -93,6 +93,7 @@ data/qdrant_storage/
 data/osrm/
 *.egg-info/
 .worktrees/
+.tokensave
 ```
 
 - [ ] **Step 4: Create the package and install in editable mode**
