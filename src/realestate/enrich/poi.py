@@ -1,7 +1,10 @@
+import logging
 import math
 from typing import Callable
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
@@ -64,9 +67,14 @@ def nearest_subway_station(
     for station in ranked:
         try:
             minutes = walking_fn(lat, lon, station["lat"], station["lon"], osrm_url=osrm_url)
-        except requests.RequestException:
-            # A single candidate's routing failure (e.g. transient OSRM/network error)
-            # shouldn't abort the whole lookup -- fall back to the remaining candidates.
+        except (requests.RequestException, ValueError) as exc:
+            # A single candidate's routing failure -- whether a transient OSRM/network
+            # error (RequestException) or a routine routing failure such as OSRM's
+            # "NoRoute"/"NoSegment" responses (ValueError) -- shouldn't abort the whole
+            # lookup. Fall back to the remaining candidates, but log it so a systemic
+            # outage (all candidates failing) is visible instead of looking identical
+            # to "no nearby subway stations".
+            logger.warning("walking_fn failed for station %s: %s", station["name"], exc)
             continue
         if best is None or minutes < best[1]:
             best = (station["name"], minutes)
