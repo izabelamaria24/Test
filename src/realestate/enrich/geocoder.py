@@ -42,17 +42,26 @@ class CachedGeocoder:
         self._geocode_fn = geocode_fn
         self._cache: dict[str, dict[str, float] | None] = {}
         if cache_path.exists():
-            self._cache = json.loads(cache_path.read_text())
+            try:
+                self._cache = json.loads(cache_path.read_text())
+            except json.JSONDecodeError:
+                self._cache = {}
 
     def geocode(self, address: str) -> GeocodeResult | None:
         if address in self._cache:
             cached = self._cache[address]
             return GeocodeResult(**cached) if cached else None
 
-        result = self._geocode_fn(address)
+        try:
+            result = self._geocode_fn(address)
+        except requests.RequestException:
+            return None
+
         self._cache[address] = (
             {"latitude": result.latitude, "longitude": result.longitude} if result else None
         )
         self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-        self._cache_path.write_text(json.dumps(self._cache))
+        tmp_path = self._cache_path.with_suffix(self._cache_path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(self._cache))
+        tmp_path.replace(self._cache_path)
         return result
