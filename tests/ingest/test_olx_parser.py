@@ -1,3 +1,4 @@
+import copy
 import json
 import pytest
 from realestate.ingest.olx_parser import parse_olx_listing_html
@@ -103,7 +104,7 @@ def test_raises_when_state_missing_ad_key():
 
 def test_raises_when_regular_price_missing_currency_symbol():
     # regularPrice present but missing currencySymbol
-    ad_data = dict(SAMPLE_AD)
+    ad_data = copy.deepcopy(SAMPLE_AD)
     ad_data["price"]["regularPrice"] = {"value": 100000, "currencyCode": "EUR"}
     html = _build_sample_html(ad_data)
     with pytest.raises(ValueError, match="invalid price structure"):
