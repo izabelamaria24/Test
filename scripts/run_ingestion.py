@@ -34,3 +34,7 @@ if __name__ == "__main__":
         print(f"{len(report.parse_failures)} files failed to parse:")
         for path, error in report.parse_failures:
             print(f"  {path}: {error}")
+    if report.enrich_failures:
+        print(f"{len(report.enrich_failures)} listings failed to enrich/embed/store:")
+        for external_id, error in report.enrich_failures:
+            print(f"  {external_id}: {error}")
