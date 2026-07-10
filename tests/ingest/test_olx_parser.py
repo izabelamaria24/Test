@@ -23,6 +23,7 @@ SAMPLE_AD = {
         {"key": "floor", "name": "Etaj", "value": "3"},
     ],
     "photos": ["https://frankfurt.apollo.olxcdn.com:443/v1/files/dlbik2gpbb3j1-RO/image;s=750x1000"],
+    "map": {"lat": 44.42, "lon": 26.1, "radius": 3, "show_detailed": False, "zoom": 12},
 }
 
 
@@ -72,6 +73,20 @@ def test_parses_image_urls():
 def test_raises_when_prerendered_state_missing():
     with pytest.raises(ValueError, match="PRERENDERED_STATE"):
         parse_olx_listing_html("<html><body>no state here</body></html>", external_id="000")
+
+
+def test_parses_map_coordinates():
+    listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
+    assert listing.map_lat == 44.42
+    assert listing.map_lon == 26.1
+
+
+def test_map_coordinates_default_to_none_when_absent():
+    ad_without_map = {k: v for k, v in SAMPLE_AD.items() if k != "map"}
+    html = _build_sample_html(ad_without_map)
+    listing = parse_olx_listing_html(html, external_id="304473136")
+    assert listing.map_lat is None
+    assert listing.map_lon is None
 
 
 def test_raises_when_state_missing_ad_key():

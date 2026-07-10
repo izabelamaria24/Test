@@ -39,6 +39,7 @@ def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
         raise ValueError(f"listing {external_id}: invalid price structure - missing value or currencySymbol")
 
     specs = {param["name"]: param["value"] for param in ad.get("params", [])}
+    map_data = ad.get("map") or {}
 
     return RawListing(
         external_id=external_id,
@@ -49,4 +50,6 @@ def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
         specs=specs,
         image_urls=ad.get("photos", []),
         source_file=f"{external_id}.html",
+        map_lat=map_data.get("lat"),
+        map_lon=map_data.get("lon"),
     )

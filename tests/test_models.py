@@ -11,9 +11,12 @@ def test_raw_listing_construction():
         specs={"Suprafata utila": "48 m²"},
         image_urls=["https://frankfurt.apollo.olxcdn.com:443/v1/files/example/image"],
         source_file="304473136.html",
+        map_lat=44.42,
+        map_lon=26.10,
     )
     assert listing.external_id == "304473136"
     assert listing.specs["Suprafata utila"] == "48 m²"
+    assert listing.map_lat == 44.42
 
 
 def test_enriched_listing_defaults_for_missing_location():
