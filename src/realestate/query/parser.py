@@ -43,6 +43,9 @@ class OllamaQueryParser:
                     "prompt": _PARSE_PROMPT.format(query=query),
                     "format": "json",
                     "stream": False,
+                    # Reasoning-capable models (e.g. qwen3.6) default to putting output in a
+                    # separate "thinking" field and leaving "response" empty unless told not to.
+                    "think": False,
                 },
                 timeout=30,
             )
