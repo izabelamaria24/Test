@@ -92,6 +92,7 @@ data/cache/
 data/qdrant_storage/
 data/osrm/
 *.egg-info/
+.worktrees/
 ```
 
 - [ ] **Step 4: Create the package and install in editable mode**
