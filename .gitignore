@@ -7,3 +7,4 @@ data/qdrant_storage/
 data/osrm/
 *.egg-info/
 .worktrees/
+.tokensave
