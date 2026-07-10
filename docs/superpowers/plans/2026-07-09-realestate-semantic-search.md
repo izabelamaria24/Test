@@ -1863,7 +1863,7 @@ git commit -m "feat: wire ingestion pipeline end-to-end with a CLI entry point"
 
 **Interfaces:**
 - Produces: `ParsedQuery(filters: dict, semantic_text: str)` (pydantic model; `filters` may contain `price_max`, `rooms`, `max_subway_minutes`, any subset)
-- Produces: `OllamaQueryParser(model="qwen2.5:14b", host="http://localhost:11434")` with `.parse(query: str) -> ParsedQuery`. On any parse failure (unreachable Ollama, invalid JSON, schema mismatch), falls back to `ParsedQuery(filters={}, semantic_text=query)` per the spec's error-handling rule — never raises.
+- Produces: `OllamaQueryParser(model="qwen3.6:27b", host="http://localhost:11434")` with `.parse(query: str) -> ParsedQuery`. On any parse failure (unreachable Ollama, invalid JSON, schema mismatch), falls back to `ParsedQuery(filters={}, semantic_text=query)` per the spec's error-handling rule — never raises.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1991,7 +1991,7 @@ def _default_post(url: str, json: dict, timeout: int):
 class OllamaQueryParser:
     def __init__(
         self,
-        model: str = "qwen2.5:14b",
+        model: str = "qwen3.6:27b",
         host: str = "http://localhost:11434",
         post_fn: Callable = _default_post,
     ):
@@ -2034,7 +2034,7 @@ git commit -m "feat: add local LLM query parser with safe fallback"
 
 - [ ] **Step 6: Manual smoke test against real Ollama**
 
-Run: `ollama pull qwen2.5:14b` then, in a Python shell:
+Run: `ollama pull qwen3.6:27b` then, in a Python shell:
 ```python
 from realestate.query.parser import OllamaQueryParser
 print(OllamaQueryParser().parse("bright pet-friendly apartment, max 150000 EUR"))
@@ -2422,7 +2422,7 @@ if __name__ == "__main__":
 
         response = requests.post(
             "http://localhost:11434/api/generate",
-            json={"model": "qwen2.5:14b", "prompt": prompt, "stream": False},
+            json={"model": "qwen3.6:27b", "prompt": prompt, "stream": False},
             timeout=30,
         )
         return response.json()["response"].strip()
