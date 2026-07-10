@@ -2008,6 +2008,9 @@ class OllamaQueryParser:
                     "prompt": _PARSE_PROMPT.format(query=query),
                     "format": "json",
                     "stream": False,
+                    # Reasoning-capable models (e.g. qwen3.6) default to putting output in a
+                    # separate "thinking" field and leaving "response" empty unless told not to.
+                    "think": False,
                 },
                 timeout=30,
             )
@@ -2017,6 +2020,13 @@ class OllamaQueryParser:
         except (requests.RequestException, ConnectionError, json.JSONDecodeError, TypeError, ValidationError, KeyError):
             return ParsedQuery(filters={}, semantic_text=query)
 ```
+
+Note: verified live against a real local `qwen3.6:27b` — without `"think": false`, the model puts its
+output in Ollama's separate `"thinking"` response field and leaves `"response"` empty, which this
+parser doesn't read, so every call silently fell back to pure semantic text. `"think": false` forces
+the JSON directly into `"response"` as expected. This is specific to newer reasoning-capable models;
+qwen2.5 (the model this plan originally specified) doesn't have this behavior, so this would have
+gone unnoticed had the model choice not later changed.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -2422,7 +2432,9 @@ if __name__ == "__main__":
 
         response = requests.post(
             "http://localhost:11434/api/generate",
-            json={"model": "qwen3.6:27b", "prompt": prompt, "stream": False},
+            # think: False is required for reasoning-capable models (e.g. qwen3.6) - without
+            # it, output goes into a separate "thinking" field and "response" comes back empty.
+            json={"model": "qwen3.6:27b", "prompt": prompt, "stream": False, "think": False},
             timeout=30,
         )
         return response.json()["response"].strip()
