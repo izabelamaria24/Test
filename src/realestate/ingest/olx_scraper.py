@@ -15,10 +15,17 @@ _LISTING_HREF_RE = re.compile(r'href="(/d/oferta/[a-zA-Z0-9_-]+\.html)')
 _LISTING_ID_RE = re.compile(r"-ID([a-zA-Z0-9]+)\.html$")
 
 
-def fetch_listing_urls_from_category(page: int, *, session: requests.Session) -> list[str]:
+def fetch_listing_urls_from_category(
+    page: int, *, session: requests.Session, rate_limit_seconds: float = 2.0
+) -> list[str]:
     response = session.get(
         CATEGORY_URL, params={"page": page}, headers={"User-Agent": USER_AGENT}, timeout=15
     )
+    time.sleep(rate_limit_seconds)
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"category page fetch failed: status={response.status_code} page={page}"
+        )
     hrefs = sorted(set(_LISTING_HREF_RE.findall(response.text)))
     return [f"https://www.olx.ro{href}" for href in hrefs]
 
@@ -46,14 +53,19 @@ def download_listings(
         if len(list(output_dir.glob("*.html"))) >= target_count:
             break
 
-        listing_urls = fetch_listing_urls_from_category(page, session=session)
+        listing_urls = fetch_listing_urls_from_category(
+            page, session=session, rate_limit_seconds=rate_limit_seconds
+        )
         if not listing_urls:
             break
 
         for url in listing_urls:
             if len(list(output_dir.glob("*.html"))) >= target_count:
                 break
-            listing_id = listing_id_from_url(url)
+            try:
+                listing_id = listing_id_from_url(url)
+            except ValueError:
+                continue
             file_path = output_dir / f"{listing_id}.html"
             if file_path.exists():
                 continue
