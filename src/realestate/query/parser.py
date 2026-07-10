@@ -26,7 +26,7 @@ def _default_post(url: str, json: dict, timeout: int):
 class OllamaQueryParser:
     def __init__(
         self,
-        model: str = "qwen2.5:14b",
+        model: str = "qwen3.6:27b",
         host: str = "http://localhost:11434",
         post_fn: Callable = _default_post,
     ):
