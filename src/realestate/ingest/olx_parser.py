@@ -25,12 +25,18 @@ def _clean_description(raw_html_description: str) -> str:
 
 def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
     state = _extract_ad_json(html)
-    ad = state["ad"]["ad"]
+    try:
+        ad = state["ad"]["ad"]
+    except KeyError:
+        raise ValueError(f"listing {external_id}: invalid state structure - ad not found")
 
     price_info = ad.get("price", {}).get("regularPrice")
     if not price_info:
         raise ValueError(f"listing {external_id}: no regular price found")
-    price_raw = f"{price_info['value']:,.0f} {price_info['currencySymbol']}".replace(",", ".")
+    try:
+        price_raw = f"{price_info['value']:,.0f} {price_info['currencySymbol']}".replace(",", ".")
+    except KeyError:
+        raise ValueError(f"listing {external_id}: invalid price structure - missing value or currencySymbol")
 
     specs = {param["name"]: param["value"] for param in ad.get("params", [])}
 

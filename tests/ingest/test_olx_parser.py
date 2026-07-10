@@ -72,3 +72,24 @@ def test_parses_image_urls():
 def test_raises_when_prerendered_state_missing():
     with pytest.raises(ValueError, match="PRERENDERED_STATE"):
         parse_olx_listing_html("<html><body>no state here</body></html>", external_id="000")
+
+
+def test_raises_when_state_missing_ad_key():
+    # state JSON missing the "ad" key entirely
+    inner_json_text = json.dumps({}, ensure_ascii=False)
+    js_string_literal = json.dumps(inner_json_text, ensure_ascii=False)
+    html = (
+        "<html><head><script>window.__PRERENDERED_STATE__= "
+        f"{js_string_literal};\n</script></head><body></body></html>"
+    )
+    with pytest.raises(ValueError, match="invalid state structure"):
+        parse_olx_listing_html(html, external_id="304473136")
+
+
+def test_raises_when_regular_price_missing_currency_symbol():
+    # regularPrice present but missing currencySymbol
+    ad_data = dict(SAMPLE_AD)
+    ad_data["price"]["regularPrice"] = {"value": 100000, "currencyCode": "EUR"}
+    html = _build_sample_html(ad_data)
+    with pytest.raises(ValueError, match="invalid price structure"):
+        parse_olx_listing_html(html, external_id="304473136")
