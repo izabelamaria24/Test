@@ -52,7 +52,7 @@ dev = ["pytest>=8.2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 
 [build-system]
 requires = ["setuptools>=68"]
