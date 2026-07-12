@@ -1477,7 +1477,14 @@ class VectorStore(Protocol):
         max_subway_minutes: float | None = None,
         limit: int = 10,
     ) -> list: ...
+
+    def list_all(self, limit: int = 1000) -> list: ...
 ```
+
+Note: `list_all` was added after Task 15's review found `run_eval.py` reaching into
+`store._client.scroll(...)` directly (a private attribute) since the protocol had no public way to
+list all stored listings — a real encapsulation break that would silently break if the store
+backend were ever swapped. See Task 15 below for the corresponding `QdrantListingStore` change.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -1526,6 +1533,18 @@ def test_query_filters_by_max_subway_minutes(store):
     ids = [r.payload["external_id"] for r in results]
     assert "close" in ids
     assert "far" not in ids
+
+
+def test_list_all_returns_upserted_points(store):
+    vector = [0.1] * 768
+    store.upsert("one", vector, {"price_eur": 100000, "rooms": 1, "subway_walking_minutes": 5.0})
+    store.upsert("two", vector, {"price_eur": 200000, "rooms": 2, "subway_walking_minutes": 10.0})
+
+    points = store.list_all()
+
+    ids = [p.payload["external_id"] for p in points]
+    assert "one" in ids
+    assert "two" in ids
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -1609,12 +1628,15 @@ class QdrantListingStore:
             limit=limit,
         )
         return response.points
+
+    def list_all(self, limit: int = 1000) -> list:
+        return self._client.scroll(collection_name=self._collection, limit=limit)[0]
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `pytest tests/store/test_qdrant_store.py -v`
-Expected: PASS (3 passed)
+Expected: PASS (4 passed)
 
 - [ ] **Step 6: Commit**
 
@@ -2344,6 +2366,15 @@ def test_evaluate_averages_metrics_across_pairs():
 
     assert scores["recall_at_k"] == 1.0
     assert 0.0 < scores["mrr"] < 1.0
+
+
+def test_evaluate_empty_pairs_returns_zeroed_scores_without_calling_search_fn():
+    def failing_search(query: str) -> list[str]:
+        raise AssertionError("search_fn should not be called for an empty pairs list")
+
+    scores = evaluate([], search_fn=failing_search)
+
+    assert scores == {"recall_at_k": 0.0, "ndcg_at_k": 0.0, "mrr": 0.0}
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -2382,6 +2413,9 @@ def mean_reciprocal_rank(retrieved_ids: list[str], relevant_id: str) -> float:
 def evaluate(
     pairs: list[EvalPair], search_fn: Callable[[str], list[str]], k: int = 10
 ) -> dict[str, float]:
+    if not pairs:
+        return {"recall_at_k": 0.0, "ndcg_at_k": 0.0, "mrr": 0.0}
+
     recalls, ndcgs, rrs = [], [], []
     for pair in pairs:
         retrieved = search_fn(pair.query)
@@ -2400,7 +2434,7 @@ def evaluate(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/eval/test_metrics.py -v`
-Expected: PASS (7 passed)
+Expected: PASS (8 passed)
 
 - [ ] **Step 5: Write the real run harness**
 
@@ -2423,9 +2457,9 @@ if __name__ == "__main__":
     embedder = MultilingualE5Embedder(device="mps")
     parser = OllamaQueryParser()
 
-    # Eval pairs are built from whatever is currently ingested, by scrolling the raw
-    # points back out of Qdrant (payload was stored as the full EnrichedListing on upsert).
-    all_points = store._client.scroll(collection_name="listings", limit=1000)[0]
+    # Eval pairs are built from whatever is currently ingested, via the store's list_all
+    # (payload was stored as the full EnrichedListing on upsert).
+    all_points = store.list_all(limit=1000)
 
     def ollama_generate(prompt: str) -> str:
         import requests
@@ -2440,12 +2474,22 @@ if __name__ == "__main__":
         return response.json()["response"].strip()
 
     pairs = []
+    query_failures = []
     for point in all_points:
         payload = point.payload
         from realestate.models import EnrichedListing
 
         listing = EnrichedListing(**{k: v for k, v in payload.items() if k != "external_id"} | {"external_id": payload["external_id"]})
-        pairs.append(generate_eval_query(listing, generate_fn=ollama_generate))
+        try:
+            pairs.append(generate_eval_query(listing, generate_fn=ollama_generate))
+        except Exception as exc:  # noqa: BLE001 - quarantine, don't crash the eval run
+            query_failures.append((listing.external_id, str(exc)))
+
+    print(f"Generated {len(pairs)} eval queries.")
+    if query_failures:
+        print(f"{len(query_failures)} listings failed to generate an eval query:")
+        for external_id, error in query_failures:
+            print(f"  {external_id}: {error}")
 
     def search_fn(query: str) -> list[str]:
         results = search(query, parser=parser, embedder=embedder, store=store, limit=10)
