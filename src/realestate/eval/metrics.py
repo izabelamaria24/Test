@@ -25,6 +25,9 @@ def mean_reciprocal_rank(retrieved_ids: list[str], relevant_id: str) -> float:
 def evaluate(
     pairs: list[EvalPair], search_fn: Callable[[str], list[str]], k: int = 10
 ) -> dict[str, float]:
+    if not pairs:
+        return {"recall_at_k": 0.0, "ndcg_at_k": 0.0, "mrr": 0.0}
+
     recalls, ndcgs, rrs = [], [], []
     for pair in pairs:
         retrieved = search_fn(pair.query)

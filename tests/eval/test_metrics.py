@@ -44,3 +44,12 @@ def test_evaluate_averages_metrics_across_pairs():
 
     assert scores["recall_at_k"] == 1.0
     assert 0.0 < scores["mrr"] < 1.0
+
+
+def test_evaluate_empty_pairs_returns_zeroed_scores_without_calling_search_fn():
+    def failing_search(query: str) -> list[str]:
+        raise AssertionError("search_fn should not be called for an empty pairs list")
+
+    scores = evaluate([], search_fn=failing_search)
+
+    assert scores == {"recall_at_k": 0.0, "ndcg_at_k": 0.0, "mrr": 0.0}

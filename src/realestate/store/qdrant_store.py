@@ -70,3 +70,6 @@ class QdrantListingStore:
             limit=limit,
         )
         return response.points
+
+    def list_all(self, limit: int = 1000) -> list:
+        return self._client.scroll(collection_name=self._collection, limit=limit)[0]

@@ -17,7 +17,7 @@ if __name__ == "__main__":
 
     # Eval pairs are built from whatever is currently ingested, by scrolling the raw
     # points back out of Qdrant (payload was stored as the full EnrichedListing on upsert).
-    all_points = store._client.scroll(collection_name="listings", limit=1000)[0]
+    all_points = store.list_all(limit=1000)
 
     def ollama_generate(prompt: str) -> str:
         import requests
@@ -32,12 +32,22 @@ if __name__ == "__main__":
         return response.json()["response"].strip()
 
     pairs = []
+    query_failures = []
     for point in all_points:
         payload = point.payload
         from realestate.models import EnrichedListing
 
         listing = EnrichedListing(**{k: v for k, v in payload.items() if k != "external_id"} | {"external_id": payload["external_id"]})
-        pairs.append(generate_eval_query(listing, generate_fn=ollama_generate))
+        try:
+            pairs.append(generate_eval_query(listing, generate_fn=ollama_generate))
+        except Exception as exc:  # noqa: BLE001 - quarantine, don't crash the eval run
+            query_failures.append((listing.external_id, str(exc)))
+
+    print(f"Generated {len(pairs)} eval queries.")
+    if query_failures:
+        print(f"{len(query_failures)} listings failed to generate an eval query:")
+        for external_id, error in query_failures:
+            print(f"  {external_id}: {error}")
 
     def search_fn(query: str) -> list[str]:
         results = search(query, parser=parser, embedder=embedder, store=store, limit=10)

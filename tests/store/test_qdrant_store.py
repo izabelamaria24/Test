@@ -41,3 +41,15 @@ def test_query_filters_by_max_subway_minutes(store):
     ids = [r.payload["external_id"] for r in results]
     assert "close" in ids
     assert "far" not in ids
+
+
+def test_list_all_returns_upserted_points(store):
+    vector = [0.1] * 768
+    store.upsert("one", vector, {"price_eur": 100000, "rooms": 1, "subway_walking_minutes": 5.0})
+    store.upsert("two", vector, {"price_eur": 200000, "rooms": 2, "subway_walking_minutes": 10.0})
+
+    points = store.list_all()
+
+    ids = [p.payload["external_id"] for p in points]
+    assert "one" in ids
+    assert "two" in ids
