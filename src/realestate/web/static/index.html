@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Real Estate Semantic Search (demo)</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 20px; }
+  #q { width: 100%; font-size: 16px; padding: 10px; box-sizing: border-box; }
+  .result { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
+  .result h3 { margin: 0 0 4px; font-size: 15px; }
+  .meta { color: #555; font-size: 13px; margin-bottom: 6px; }
+  .score { color: #888; font-size: 12px; }
+  .desc { font-size: 13px; color: #333; max-height: 4.5em; overflow: hidden; }
+  #status { color: #888; font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>Real estate semantic search (demo)</h1>
+  <input id="q" type="text" placeholder="e.g. apartament luminos, 2 camere, buget maxim 150000 euro" autofocus>
+  <div id="status"></div>
+  <div id="results"></div>
+
+<script>
+const q = document.getElementById("q");
+const statusEl = document.getElementById("status");
+const resultsEl = document.getElementById("results");
+let timer = null;
+
+q.addEventListener("input", () => {
+  clearTimeout(timer);
+  timer = setTimeout(runSearch, 400);
+});
+
+async function runSearch() {
+  const query = q.value.trim();
+  resultsEl.innerHTML = "";
+  if (!query) { statusEl.textContent = ""; return; }
+
+  statusEl.textContent = "Searching...";
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=3`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const listings = await res.json();
+    statusEl.textContent = `${listings.length} result(s)`;
+    resultsEl.innerHTML = listings.map(renderResult).join("");
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+  }
+}
+
+function renderResult(r) {
+  return `
+    <div class="result">
+      <h3>${escapeHtml(r.title)}</h3>
+      <div class="meta">${r.price_eur.toLocaleString()} EUR · ${r.rooms ?? "?"} rooms · ${r.built_area_sqm ?? "?"} m² · ${escapeHtml(r.address_text)}</div>
+      <div class="score">similarity: ${r.score.toFixed(3)}</div>
+      <div class="desc">${escapeHtml(r.description)}</div>
+    </div>`;
+}
+
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s ?? "";
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
