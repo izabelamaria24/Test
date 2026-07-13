@@ -76,3 +76,50 @@ def test_parse_falls_back_when_json_is_not_a_dict_array():
 
     assert result.filters == {}
     assert result.semantic_text == "some query"
+
+
+def test_parse_drops_zero_subway_minutes_invented_from_vague_phrasing():
+    def fake_post(url, json, timeout):
+        return FakeResponse(
+            {
+                "response": (
+                    '{"filters": {"price_max": 250000, "max_subway_minutes": 0}, '
+                    '"semantic_text": "apartament luminos"}'
+                )
+            }
+        )
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("apartament luminos, aproape de metrou, buget maxim 250000 euro")
+
+    assert result.filters == {"price_max": 250000}
+    assert "max_subway_minutes" not in result.filters
+
+
+def test_parse_drops_negative_filter_values():
+    def fake_post(url, json, timeout):
+        return FakeResponse(
+            {"response": '{"filters": {"rooms": -1, "price_max": 100000}, "semantic_text": "x"}'}
+        )
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("x")
+
+    assert result.filters == {"price_max": 100000}
+
+
+def test_parse_keeps_positive_filter_values():
+    def fake_post(url, json, timeout):
+        return FakeResponse(
+            {
+                "response": (
+                    '{"filters": {"price_max": 150000, "rooms": 2, "max_subway_minutes": 15}, '
+                    '"semantic_text": "x"}'
+                )
+            }
+        )
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("x")
+
+    assert result.filters == {"price_max": 150000, "rooms": 2, "max_subway_minutes": 15}
