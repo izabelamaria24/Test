@@ -1,2 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+data/raw/
+data/cache/
+data/qdrant_storage/
+data/osrm/
+*.egg-info/
 .worktrees/
 .tokensave
