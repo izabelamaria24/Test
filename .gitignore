@@ -7,4 +7,9 @@ data/qdrant_storage/
 data/osrm/
 *.egg-info/
 .worktrees/
-.tokensave
+.tokensave/
+.memsearch/
+.DS_Store
+.pytest_cache/
+htmlcov/
+.coverage
