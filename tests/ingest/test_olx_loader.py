@@ -1,5 +1,6 @@
 # tests/ingest/test_olx_loader.py
 from pathlib import Path
+
 from realestate.ingest.olx_loader import load_olx_html_directory
 from tests.ingest.test_olx_parser import SAMPLE_HTML
 

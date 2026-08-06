@@ -1,5 +1,5 @@
 import math
-from typing import Callable
+from collections.abc import Callable
 
 from realestate.eval.generate_queries import EvalPair
 

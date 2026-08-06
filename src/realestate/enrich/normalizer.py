@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from typing import TypedDict, cast
 
 SPEC_LABEL_MAP: dict[str, str] = {
     "Suprafata utila": "built_area_sqm",
@@ -14,6 +15,13 @@ _NON_NUMERIC_FLOOR_TERMS: dict[str, int] = {
     "parter": 0,
     "demisol": -1,
 }
+
+
+class NormalizedSpecs(TypedDict):
+    built_area_sqm: float | None
+    floor_number: int | None
+    construction_year_range: str | None
+    layout_type: str | None
 
 
 def normalize_price_eur(price_raw: str) -> float:
@@ -34,7 +42,7 @@ def normalize_rooms(title: str) -> int | None:
     return None
 
 
-def normalize_specs(specs: dict[str, str]) -> dict[str, object]:
+def normalize_specs(specs: dict[str, str]) -> "NormalizedSpecs":
     normalized: dict[str, object] = {
         "built_area_sqm": None,
         "floor_number": None,
@@ -50,7 +58,9 @@ def normalize_specs(specs: dict[str, str]) -> dict[str, object]:
             normalized[field] = float(match.group(1).replace(",", ".")) if match else None
         elif field == "floor_number":
             # Check for known non-numeric floor terms first
-            normalized_raw = unicodedata.normalize("NFD", raw_value.lower()).encode("ascii", "ignore").decode()
+            normalized_raw = (
+                unicodedata.normalize("NFD", raw_value.lower()).encode("ascii", "ignore").decode()
+            )
             for term, floor_value in _NON_NUMERIC_FLOOR_TERMS.items():
                 if term in normalized_raw:
                     normalized[field] = floor_value
@@ -61,4 +71,4 @@ def normalize_specs(specs: dict[str, str]) -> dict[str, object]:
                 normalized[field] = int(match.group(1)) if match else None
         else:
             normalized[field] = raw_value
-    return normalized
+    return cast("NormalizedSpecs", normalized)

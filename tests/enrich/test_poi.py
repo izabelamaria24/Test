@@ -1,5 +1,3 @@
-import math
-
 import requests
 
 from realestate.enrich.poi import haversine_km, nearest_subway_station
@@ -82,8 +80,6 @@ def test_nearest_subway_station_returns_none_when_all_candidates_fail():
     def always_fails(lat1, lon1, lat2, lon2, osrm_url="http://localhost:5000"):
         raise requests.RequestException("OSRM unreachable")
 
-    result = nearest_subway_station(
-        44.430, 26.102, STATIONS, candidates=3, walking_fn=always_fails
-    )
+    result = nearest_subway_station(44.430, 26.102, STATIONS, candidates=3, walking_fn=always_fails)
 
     assert result is None

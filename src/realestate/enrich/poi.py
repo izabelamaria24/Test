@@ -1,6 +1,6 @@
 import logging
 import math
-from typing import Callable
+from collections.abc import Callable
 
 import requests
 
