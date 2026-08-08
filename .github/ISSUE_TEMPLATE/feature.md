@@ -1,7 +1,7 @@
+---
 name: Feature
 about: A new capability or enhancement
 labels: ["type:feature"]
-body: markdown
 ---
 
 ## Goal

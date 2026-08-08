@@ -1,4 +1,8 @@
+import pytest
+
 from realestate.embed.sentence_embedder import MultilingualE5Embedder
+
+pytestmark = pytest.mark.integration  # loads the real e5 model; excluded from CI
 
 
 def test_embed_passage_and_query_return_same_dimensionality():

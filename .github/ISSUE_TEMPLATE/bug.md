@@ -1,3 +1,4 @@
+---
 name: Bug
 about: Something is broken or behaves unexpectedly
 labels: ["type:bug"]

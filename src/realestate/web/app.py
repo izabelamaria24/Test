@@ -3,6 +3,7 @@
 Usage: uvicorn realestate.web.app:app --reload
 """
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -19,7 +20,7 @@ app = FastAPI()
 _static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
-_embedder = MultilingualE5Embedder(device="mps")
+_embedder = MultilingualE5Embedder(device=os.getenv("REALESTATE_EMBEDDER_DEVICE", "cpu"))
 _parser = OllamaQueryParser()
 _store = QdrantListingStore()
 
