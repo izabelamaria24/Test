@@ -20,6 +20,8 @@ dev = [
     "ruff>=0.6",
     "pyright>=1.1.380",
     "pre-commit>=3.8",
+    "bandit>=1.7",
+    "vulture>=2.11",
 ]
 
 [tool.ruff]
@@ -45,6 +47,10 @@ markers = [
 
 [tool.coverage.run]
 source = ["src"]
+
+[tool.vulture]
+paths = ["src"]
+min_confidence = 80
 
 [build-system]
 requires = ["setuptools>=68"]

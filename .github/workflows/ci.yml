@@ -28,5 +28,11 @@ jobs:
       - name: Pyright type check
         run: uv run pyright
 
+      - name: Bandit security scan
+        run: uv run bandit -r src
+
+      - name: Vulture dead-code scan
+        run: uv run vulture
+
       - name: Tests (excluding integration)
         run: uv run pytest -m "not integration" --cov --cov-report=term-missing
