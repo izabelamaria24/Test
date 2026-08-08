@@ -111,3 +111,17 @@ def test_raises_when_regular_price_missing_currency_symbol():
     html = _build_sample_html(ad_data)
     with pytest.raises(ValueError, match="invalid price structure"):
         parse_olx_listing_html(html, external_id="304473136")
+
+
+def test_parses_minified_state_without_newline_terminator():
+    # Minified variant: no space after '=', no ';\n' terminator, more JS on the same line.
+    inner_json_text = json.dumps({"ad": {"ad": SAMPLE_AD}}, ensure_ascii=False)
+    js_string_literal = json.dumps(inner_json_text, ensure_ascii=False)
+    html = (
+        "<html><head><script>"
+        f"window.__PRERENDERED_STATE__={js_string_literal};window.__OTHER__=1;"
+        "</script></head><body></body></html>"
+    )
+    listing = parse_olx_listing_html(html, external_id="304473136")
+    assert listing.title == "Vand apartament 2 camere TITAN"
+    assert listing.price_raw == "100.000 €"

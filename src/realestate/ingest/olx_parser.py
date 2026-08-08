@@ -4,20 +4,25 @@ from bs4 import BeautifulSoup
 
 from realestate.models import RawListing
 
-_STATE_PREFIX = "window.__PRERENDERED_STATE__= "
+_STATE_MARKER = "window.__PRERENDERED_STATE__="
 
 
 def _extract_ad_json(html: str) -> dict:
-    start = html.find(_STATE_PREFIX)
-    if start == -1:
+    marker = html.find(_STATE_MARKER)
+    if marker == -1:
         raise ValueError("PRERENDERED_STATE script assignment not found")
-    start += len(_STATE_PREFIX)
-    end = html.find(";\n", start)
-    if end == -1:
-        raise ValueError("could not find end of PRERENDERED_STATE assignment")
-    js_string_literal = html[start:end]
-    inner_json_text = json.loads(js_string_literal)  # un-escape the JS string
-    return json.loads(inner_json_text)  # parse the actual JSON payload
+    start = marker + len(_STATE_MARKER)
+    while start < len(html) and html[start] in " \t":
+        start += 1
+    try:
+        # Parse the JS string literal directly so we don't depend on a ';\n' terminator
+        # (robust to minified HTML or other JS following the assignment).
+        js_string_literal, _ = json.JSONDecoder().raw_decode(html, start)
+    except json.JSONDecodeError as err:
+        raise ValueError("could not parse PRERENDERED_STATE assignment") from err
+    if not isinstance(js_string_literal, str):
+        raise ValueError("PRERENDERED_STATE value is not a string literal")
+    return json.loads(js_string_literal)  # parse the actual JSON payload
 
 
 def _clean_description(raw_html_description: str) -> str:
