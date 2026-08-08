@@ -37,7 +37,10 @@ if __name__ == "__main__":
         payload = point.payload
         from realestate.models import EnrichedListing
 
-        listing = EnrichedListing(**{k: v for k, v in payload.items() if k != "external_id"} | {"external_id": payload["external_id"]})
+        listing = EnrichedListing(
+            **{k: v for k, v in payload.items() if k != "external_id"}
+            | {"external_id": payload["external_id"]}
+        )
         try:
             pairs.append(generate_eval_query(listing, generate_fn=ollama_generate))
         except Exception as exc:  # noqa: BLE001 - quarantine, don't crash the eval run

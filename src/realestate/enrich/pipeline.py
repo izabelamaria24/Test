@@ -1,4 +1,4 @@
-from typing import Callable
+from collections.abc import Callable
 
 from realestate.enrich.geocoder import CachedGeocoder
 from realestate.enrich.normalizer import normalize_price_eur, normalize_rooms, normalize_specs

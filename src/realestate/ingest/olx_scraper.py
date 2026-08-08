@@ -23,9 +23,7 @@ def fetch_listing_urls_from_category(
     )
     time.sleep(rate_limit_seconds)
     if response.status_code != 200:
-        raise RuntimeError(
-            f"category page fetch failed: status={response.status_code} page={page}"
-        )
+        raise RuntimeError(f"category page fetch failed: status={response.status_code} page={page}")
     hrefs = sorted(set(_LISTING_HREF_RE.findall(response.text)))
     return [f"https://www.olx.ro{href}" for href in hrefs]
 

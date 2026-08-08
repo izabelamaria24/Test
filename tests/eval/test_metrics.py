@@ -1,5 +1,3 @@
-import math
-
 from realestate.eval.generate_queries import EvalPair
 from realestate.eval.metrics import evaluate, mean_reciprocal_rank, ndcg_at_k, recall_at_k
 

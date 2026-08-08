@@ -1,4 +1,4 @@
-from realestate.models import RawListing, EnrichedListing
+from realestate.models import EnrichedListing, RawListing
 
 
 def test_raw_listing_construction():

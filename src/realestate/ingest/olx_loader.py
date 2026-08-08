@@ -1,5 +1,6 @@
 # src/realestate/ingest/olx_loader.py
 from pathlib import Path
+
 from realestate.ingest.olx_parser import parse_olx_listing_html
 from realestate.models import RawListing
 

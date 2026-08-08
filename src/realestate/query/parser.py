@@ -1,5 +1,5 @@
 import json
-from typing import Callable
+from collections.abc import Callable
 
 import requests
 from pydantic import BaseModel, ValidationError
@@ -31,7 +31,11 @@ def _drop_implausible_filters(filters: dict) -> dict:
     # A real constraint is never "0 or less" for any of these - price_max/rooms/
     # max_subway_minutes <= 0 means the model invented a threshold from vague language
     # (e.g. "close to the subway" -> max_subway_minutes: 0) rather than an actual stated number.
-    return {key: value for key, value in filters.items() if not (isinstance(value, (int, float)) and value <= 0)}
+    return {
+        key: value
+        for key, value in filters.items()
+        if not (isinstance(value, (int, float)) and value <= 0)
+    }
 
 
 class OllamaQueryParser:
@@ -65,5 +69,12 @@ class OllamaQueryParser:
             if isinstance(raw, dict):
                 raw["filters"] = _drop_implausible_filters(raw.get("filters", {}))
             return ParsedQuery(**raw)
-        except (requests.RequestException, ConnectionError, json.JSONDecodeError, ValidationError, KeyError, TypeError):
+        except (
+            requests.RequestException,
+            ConnectionError,
+            json.JSONDecodeError,
+            ValidationError,
+            KeyError,
+            TypeError,
+        ):
             return ParsedQuery(filters={}, semantic_text=query)

@@ -1,6 +1,10 @@
 import uuid
+
 import pytest
+
 from realestate.store.qdrant_store import QdrantListingStore
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
@@ -22,7 +26,9 @@ def test_upsert_and_query_returns_the_point(store):
 def test_query_filters_out_listings_above_price_max(store):
     vector = [0.1] * 768
     store.upsert("cheap", vector, {"price_eur": 50000, "rooms": 1, "subway_walking_minutes": 5.0})
-    store.upsert("expensive", vector, {"price_eur": 500000, "rooms": 1, "subway_walking_minutes": 5.0})
+    store.upsert(
+        "expensive", vector, {"price_eur": 500000, "rooms": 1, "subway_walking_minutes": 5.0}
+    )
 
     results = store.query(vector, price_max=100000, limit=10)
 

@@ -1,4 +1,4 @@
-from realestate.query.parser import OllamaQueryParser, ParsedQuery
+from realestate.query.parser import OllamaQueryParser
 
 
 class FakeResponse:

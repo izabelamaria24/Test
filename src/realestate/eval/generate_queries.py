@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from realestate.models import EnrichedListing
 
@@ -21,9 +21,7 @@ class EvalPair:
     relevant_listing_id: str
 
 
-def generate_eval_query(
-    listing: EnrichedListing, *, generate_fn: Callable[[str], str]
-) -> EvalPair:
+def generate_eval_query(listing: EnrichedListing, *, generate_fn: Callable[[str], str]) -> EvalPair:
     prompt = _GENERATE_PROMPT.format(
         title=listing.title,
         description=listing.description,

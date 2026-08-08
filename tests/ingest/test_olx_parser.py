@@ -1,6 +1,8 @@
 import copy
 import json
+
 import pytest
+
 from realestate.ingest.olx_parser import parse_olx_listing_html
 
 # Fields below mirror the real structure of window.__PRERENDERED_STATE__ verified against
@@ -13,9 +15,7 @@ SAMPLE_AD = {
         "Direct proprietar !<br />\nVand apartament 2 camere decomandat<br />\n"
         "* Suprafata utila 48 utili"
     ),
-    "price": {
-        "regularPrice": {"value": 100000, "currencyCode": "EUR", "currencySymbol": "€"}
-    },
+    "price": {"regularPrice": {"value": 100000, "currencyCode": "EUR", "currencySymbol": "€"}},
     "location": {"pathName": "Bucuresti - Ilfov, Bucuresti, Sectorul 3"},
     "params": [
         {"key": "compartimentare", "name": "Compartimentare", "value": "Decomandat"},
@@ -23,7 +23,9 @@ SAMPLE_AD = {
         {"key": "constructie", "name": "An constructie", "value": "1977 – 1990"},
         {"key": "floor", "name": "Etaj", "value": "3"},
     ],
-    "photos": ["https://frankfurt.apollo.olxcdn.com:443/v1/files/dlbik2gpbb3j1-RO/image;s=750x1000"],
+    "photos": [
+        "https://frankfurt.apollo.olxcdn.com:443/v1/files/dlbik2gpbb3j1-RO/image;s=750x1000"
+    ],
     "map": {"lat": 44.42, "lon": 26.1, "radius": 3, "show_detailed": False, "zoom": 12},
 }
 

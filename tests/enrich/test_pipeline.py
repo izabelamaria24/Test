@@ -54,7 +54,10 @@ def test_enrich_listing_falls_back_to_geocoding_when_map_absent(tmp_path):
         return ("Universitate", 6.5)
 
     enriched = enrich_listing(
-        RAW_WITHOUT_MAP, geocoder=geocoder, stations=STATIONS, nearest_station_fn=fake_nearest_station
+        RAW_WITHOUT_MAP,
+        geocoder=geocoder,
+        stations=STATIONS,
+        nearest_station_fn=fake_nearest_station,
     )
 
     assert enriched.latitude == 44.4325
@@ -69,7 +72,10 @@ def test_enrich_listing_flags_low_confidence_location_when_map_absent_and_geocod
     )
 
     enriched = enrich_listing(
-        RAW_WITHOUT_MAP, geocoder=geocoder, stations=STATIONS, nearest_station_fn=lambda *a, **k: None
+        RAW_WITHOUT_MAP,
+        geocoder=geocoder,
+        stations=STATIONS,
+        nearest_station_fn=lambda *a, **k: None,
     )
 
     assert enriched.latitude is None

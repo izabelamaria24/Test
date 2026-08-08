@@ -39,7 +39,9 @@ class FakeSession:
     def get(self, url, params=None, headers=None, timeout=None):
         if params and "page" in params:
             return FakeResponse(self._category_pages.get(params["page"], ""))
-        return FakeResponse(self._listing_pages.get(url, ""), status_code=200 if url in self._listing_pages else 404)
+        return FakeResponse(
+            self._listing_pages.get(url, ""), status_code=200 if url in self._listing_pages else 404
+        )
 
 
 def test_listing_id_from_url_extracts_trailing_id():
@@ -59,8 +61,12 @@ def test_download_listings_writes_files_and_stops_at_target_count(tmp_path: Path
     session = FakeSession(
         category_pages={1: CATEGORY_PAGE_HTML},
         listing_pages={
-            "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html": LISTING_HTML_TEMPLATE.format(listing_id="kBxn2"),
-            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(listing_id="kHrfc"),
+            "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html": LISTING_HTML_TEMPLATE.format(
+                listing_id="kBxn2"
+            ),
+            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(
+                listing_id="kHrfc"
+            ),
         },
     )
 
@@ -75,8 +81,12 @@ def test_download_listings_is_idempotent_and_skips_existing_files(tmp_path: Path
     session = FakeSession(
         category_pages={1: CATEGORY_PAGE_HTML},
         listing_pages={
-            "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html": LISTING_HTML_TEMPLATE.format(listing_id="kBxn2"),
-            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(listing_id="kHrfc"),
+            "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html": LISTING_HTML_TEMPLATE.format(
+                listing_id="kBxn2"
+            ),
+            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(
+                listing_id="kHrfc"
+            ),
         },
     )
 
@@ -124,7 +134,9 @@ def test_download_listings_skips_malformed_listing_url_and_continues(tmp_path: P
     session = FakeSession(
         category_pages={1: category_html_with_malformed_href},
         listing_pages={
-            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(listing_id="kHrfc"),
+            "https://www.olx.ro/d/oferta/apartament-3-camere-ghencea-IDkHrfc.html": LISTING_HTML_TEMPLATE.format(
+                listing_id="kHrfc"
+            ),
         },
     )
 

@@ -1,6 +1,7 @@
 import json
 
 from bs4 import BeautifulSoup
+
 from realestate.models import RawListing
 
 _STATE_PREFIX = "window.__PRERENDERED_STATE__= "
@@ -27,16 +28,18 @@ def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
     state = _extract_ad_json(html)
     try:
         ad = state["ad"]["ad"]
-    except KeyError:
-        raise ValueError(f"listing {external_id}: invalid state structure - ad not found")
+    except KeyError as err:
+        raise ValueError(f"listing {external_id}: invalid state structure - ad not found") from err
 
     price_info = ad.get("price", {}).get("regularPrice")
     if not price_info:
         raise ValueError(f"listing {external_id}: no regular price found")
     try:
         price_raw = f"{price_info['value']:,.0f} {price_info['currencySymbol']}".replace(",", ".")
-    except KeyError:
-        raise ValueError(f"listing {external_id}: invalid price structure - missing value or currencySymbol")
+    except KeyError as err:
+        raise ValueError(
+            f"listing {external_id}: invalid price structure - missing value or currencySymbol"
+        ) from err
 
     specs = {param["name"]: param["value"] for param in ad.get("params", [])}
     map_data = ad.get("map") or {}
