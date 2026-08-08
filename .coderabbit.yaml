@@ -1,0 +1,40 @@
+# CodeRabbit configuration — https://docs.coderabbit.ai/reference/configuration
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive            # thorough; use "chill" for fewer nits
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_instructions:
+    - path: "src/**"
+      instructions: >-
+        Enforce the repo quality-gate (.claude/skills/quality-gate/SKILL.md):
+        respect the layered architecture (ingest/enrich/embed/store/query/eval)
+        depending only on neighbour abstractions; require full type hints and
+        pyright-basic-clean typing (no `object` leaking into typed fields — use
+        TypedDict/pydantic); validate only at system boundaries and chain
+        exceptions with `raise ... from err`; keep functions small and pure
+        where logic can be pure; flag dead code, unused imports, and behaviour
+        changes that lack a test.
+    - path: "tests/**"
+      instructions: >-
+        Tests must be deterministic and isolated: inject fakes for HTTP/LLM/
+        geocoder, no network in unit tests. Anything hitting live Qdrant/Ollama/
+        OSRM must be marked @pytest.mark.integration. Prefer testing behaviour
+        and edge cases (None/empty/boundary) over implementation detail.
+    - path: "**/*.py"
+      instructions: >-
+        No secrets or credentials in code or fixtures. Treat scraped HTML, LLM
+        output, and user queries as untrusted input.
+
+chat:
+  auto_reply: true

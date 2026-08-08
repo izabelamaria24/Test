@@ -1,0 +1,17 @@
+# Sourcery configuration — https://docs.sourcery.ai/Configuration/
+rule_settings:
+  enable:
+    - default
+  python_version: "3.11"
+
+# Behaviour of the Sourcery GitHub review bot.
+github:
+  review_comments: true
+  request_review: author
+  sourcery_branch: sourcery/{base_branch}
+
+# Skip generated/vendored paths from review suggestions.
+ignore:
+  - .venv
+  - data
+  - "**/__pycache__"
