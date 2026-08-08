@@ -4,6 +4,7 @@ Usage: uvicorn realestate.web.app:app --reload
 """
 
 import os
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -15,11 +16,6 @@ from realestate.embed.sentence_embedder import MultilingualE5Embedder
 from realestate.query.parser import OllamaQueryParser
 from realestate.query.retrieval import search
 from realestate.store.qdrant_store import QdrantListingStore
-
-app = FastAPI()
-
-_static_dir = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
 @lru_cache
@@ -35,6 +31,20 @@ def get_parser() -> OllamaQueryParser:
 @lru_cache
 def get_store() -> QdrantListingStore:
     return QdrantListingStore()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Warm the model at startup so the first request isn't slow and concurrent
+    # first requests don't each trigger a load.
+    get_embedder()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+_static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
 @app.get("/")
