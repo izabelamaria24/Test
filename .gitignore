@@ -11,5 +11,7 @@ data/osrm/
 .memsearch/
 .DS_Store
 .pytest_cache/
+.ruff_cache/
+.superpowers/
 htmlcov/
 .coverage
