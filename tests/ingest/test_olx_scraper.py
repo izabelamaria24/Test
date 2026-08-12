@@ -35,6 +35,7 @@ class FakeSession:
     def __init__(self, category_pages: dict[int, str], listing_pages: dict[str, str]):
         self._category_pages = category_pages
         self._listing_pages = listing_pages
+        self.closed = False
 
     def get(self, url, params=None, headers=None, timeout=None):
         if params and "page" in params:
@@ -42,6 +43,9 @@ class FakeSession:
         return FakeResponse(
             self._listing_pages.get(url, ""), status_code=200 if url in self._listing_pages else 404
         )
+
+    def close(self):
+        self.closed = True
 
 
 def test_listing_id_from_url_extracts_trailing_id():
@@ -94,6 +98,19 @@ def test_download_listings_is_idempotent_and_skips_existing_files(tmp_path: Path
 
     assert "kBxn2" not in downloaded
     assert (tmp_path / "kBxn2.html").read_text(encoding="utf-8") == "already here"
+
+
+def test_download_listings_does_not_close_injected_session(tmp_path: Path):
+    session = FakeSession(category_pages={1: ""}, listing_pages={})
+    download_listings(1, tmp_path, session=session, rate_limit_seconds=0)
+    assert session.closed is False
+
+
+def test_download_listings_closes_self_created_session(tmp_path: Path):
+    created = FakeSession(category_pages={1: ""}, listing_pages={})
+    with patch("realestate.ingest.olx_scraper.requests.Session", return_value=created):
+        download_listings(1, tmp_path, rate_limit_seconds=0)
+    assert created.closed is True
 
 
 def test_fetch_listing_urls_from_category_sleeps_for_rate_limit():

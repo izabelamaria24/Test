@@ -44,35 +44,42 @@ def download_listings(
     max_pages: int = 50,
 ) -> list[str]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    owns_session = session is None
     session = session or requests.Session()
 
     downloaded_ids: list[str] = []
-    for page in range(1, max_pages + 1):
-        if len(list(output_dir.glob("*.html"))) >= target_count:
-            break
-
-        listing_urls = fetch_listing_urls_from_category(
-            page, session=session, rate_limit_seconds=rate_limit_seconds
-        )
-        if not listing_urls:
-            break
-
-        for url in listing_urls:
-            if len(list(output_dir.glob("*.html"))) >= target_count:
+    downloaded_count = len(list(output_dir.glob("*.html")))
+    try:
+        for page in range(1, max_pages + 1):
+            if downloaded_count >= target_count:
                 break
-            try:
-                listing_id = listing_id_from_url(url)
-            except ValueError:
-                continue
-            file_path = output_dir / f"{listing_id}.html"
-            if file_path.exists():
-                continue
 
-            response = session.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
-            time.sleep(rate_limit_seconds)
-            if response.status_code != 200:
-                continue
-            file_path.write_text(response.text, encoding="utf-8")
-            downloaded_ids.append(listing_id)
+            listing_urls = fetch_listing_urls_from_category(
+                page, session=session, rate_limit_seconds=rate_limit_seconds
+            )
+            if not listing_urls:
+                break
+
+            for url in listing_urls:
+                if downloaded_count >= target_count:
+                    break
+                try:
+                    listing_id = listing_id_from_url(url)
+                except ValueError:
+                    continue
+                file_path = output_dir / f"{listing_id}.html"
+                if file_path.exists():
+                    continue
+
+                response = session.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+                time.sleep(rate_limit_seconds)
+                if response.status_code != 200:
+                    continue
+                file_path.write_text(response.text, encoding="utf-8")
+                downloaded_ids.append(listing_id)
+                downloaded_count += 1
+    finally:
+        if owns_session:
+            session.close()
 
     return downloaded_ids
