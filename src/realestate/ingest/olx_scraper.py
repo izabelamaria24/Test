@@ -45,7 +45,8 @@ def download_listings(
 ) -> list[str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     owns_session = session is None
-    session = session or requests.Session()
+    if session is None:
+        session = requests.Session()
 
     downloaded_ids: list[str] = []
     downloaded_count = len(list(output_dir.glob("*.html")))
