@@ -33,6 +33,10 @@ few high-signal findings over many nits.
 - **Close what you open.** `requests.Session`, DB clients, file handles, and
   torch resources must be closed (context manager or shutdown hook). Flag
   self-created clients that are never released.
+- **Inference mode (torch).** Serving/eval paths should call `model.eval()`
+  (switches Dropout/BatchNorm to inference behaviour) *and* wrap inference in
+  `torch.inference_mode()` / `torch.no_grad()` when autograd outputs aren't
+  needed — these are separate concerns; `eval()` does not disable gradients.
 
 ## 2. Config & portability
 
@@ -48,9 +52,11 @@ few high-signal findings over many nits.
 
 ## 3. Evaluation correctness (highest-value, bots miss these)
 
-- **Train/eval leakage.** The eval set must not overlap the data used to build
-  the index/model, and query-generation must not leak the gold answer. Flag eval
-  harnesses that draw positives from the same rows they score against.
+- **Train/eval leakage.** A gold document also being in the indexed corpus is
+  normal for retrieval metrics (standard IR separates corpus, queries, and
+  relevance judgments, then scores returned corpus items) — that alone is not
+  leakage. Flag real contamination instead: train/test overlap, and query- or
+  answer-generation that leaks the gold answer/relevance into the query.
 - **Metric honesty.** Retrieval metrics (recall@k, NDCG, MRR) measure whether a
   *known* relevant item is returned — not whether a relaxed/"compromise" result
   is desirable. Flag claims that IR metrics validate subjective quality.
@@ -61,11 +67,16 @@ few high-signal findings over many nits.
 
 ## 4. Embeddings & retrieval
 
-- **Prefix/instruction correctness.** Instruction-tuned embedders (e5, BGE, GTE)
-  require the trained prefixes (`query:` / `passage:`). Flag missing/mismatched
-  prefixes — a silent quality killer.
-- **Normalization matches the metric.** If the store uses cosine, embeddings
-  must be normalized (or the metric must be dot/`ip`). Flag mismatches.
+- **Prefix/instruction correctness (model- and task-specific).** E5 requires
+  `query:` / `passage:`; BGE uses an optional *query* instruction and no passage
+  prefix; base GTE needs none while instruction-tuned variants (e.g.
+  `gte-Qwen2-instruct`) need a query instruction. Resolve the model revision
+  before flagging — a silent quality killer when wrong.
+- **Normalization matches the metric.** Some stores normalize internally (e.g.
+  Qdrant normalizes on upload for cosine, making cosine == dot). Require
+  client-side normalization of *both* indexed and query vectors only when
+  `dot`/`ip` is used as a cosine proxy and the store doesn't normalize
+  equivalently. Flag genuine mismatches.
 - **Dimensionality + distance config.** Vector dim and distance metric in the
   store must match the model. Flag hard-coded dims that can drift from the model.
 - **Filter-then-ANN.** Structured filters should be native DB filters (pre-ANN),
@@ -91,9 +102,10 @@ few high-signal findings over many nits.
 
 ## Output format
 
-```
+```text
 [severity] path:line — <one-line risk>
   fix: <concrete change>
 ```
-End with a short verdict (ship / ship-with-fixes / needs-work) and the top 3
-must-fix items.
+
+End with a short verdict (ship / ship-with-fixes / needs-work) and up to 3
+must-fix items (or `none`).
