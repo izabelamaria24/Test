@@ -113,6 +113,48 @@ def test_download_listings_closes_self_created_session(tmp_path: Path):
     assert created.closed is True
 
 
+class _FalsySession(FakeSession):
+    # A caller-provided session whose truthiness is False (edge case the old
+    # `session or requests.Session()` would silently replace).
+    def __bool__(self) -> bool:
+        return False
+
+
+def test_download_listings_uses_falsy_injected_session_without_replacing_it(tmp_path: Path):
+    session = _FalsySession(
+        category_pages={1: CATEGORY_PAGE_HTML},
+        listing_pages={
+            "https://www.olx.ro/d/oferta/apartament-2-camere-titan-IDkBxn2.html": LISTING_HTML_TEMPLATE.format(
+                listing_id="kBxn2"
+            ),
+        },
+    )
+
+    downloaded = download_listings(1, tmp_path, session=session, rate_limit_seconds=0)
+
+    # The injected (falsy) session was used, not replaced by a real requests.Session,
+    assert downloaded == ["kBxn2"]
+    # and an injected session is never closed by download_listings.
+    assert session.closed is False
+
+
+def test_download_listings_closes_self_created_session_when_scan_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    created = FakeSession(category_pages={1: ""}, listing_pages={})
+
+    def boom(self, pattern):
+        raise OSError("directory scan failed")
+
+    monkeypatch.setattr(Path, "glob", boom)
+    with (
+        patch("realestate.ingest.olx_scraper.requests.Session", return_value=created),
+        pytest.raises(OSError),
+    ):
+        download_listings(1, tmp_path, rate_limit_seconds=0)
+    assert created.closed is True
+
+
 def test_fetch_listing_urls_from_category_sleeps_for_rate_limit():
     session = FakeSession(category_pages={1: CATEGORY_PAGE_HTML}, listing_pages={})
 

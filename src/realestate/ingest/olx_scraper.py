@@ -49,8 +49,8 @@ def download_listings(
         session = requests.Session()
 
     downloaded_ids: list[str] = []
-    downloaded_count = len(list(output_dir.glob("*.html")))
     try:
+        downloaded_count = len(list(output_dir.glob("*.html")))
         for page in range(1, max_pages + 1):
             if downloaded_count >= target_count:
                 break
