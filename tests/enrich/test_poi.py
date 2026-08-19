@@ -1,3 +1,5 @@
+import functools
+
 import requests
 
 from realestate.enrich.poi import haversine_km, nearest_subway_station
@@ -83,3 +85,19 @@ def test_nearest_subway_station_returns_none_when_all_candidates_fail():
     result = nearest_subway_station(44.430, 26.102, STATIONS, candidates=3, walking_fn=always_fails)
 
     assert result is None
+
+
+def test_nearest_subway_station_accepts_partially_bound_walking_fn():
+    # Custom OSRM URLs are now supplied by binding the arg (functools.partial),
+    # not via a nearest_subway_station parameter.
+    seen_urls: list[str] = []
+
+    def walking_fn_with_url(lat1, lon1, lat2, lon2, *, osrm_url):
+        seen_urls.append(osrm_url)
+        return 5.0 if (lat2, lon2) == (44.4356, 26.1023) else 30.0
+
+    bound = functools.partial(walking_fn_with_url, osrm_url="http://osrm.example:5000")
+    result = nearest_subway_station(44.435, 26.102, STATIONS, candidates=3, walking_fn=bound)
+
+    assert result == ("Universitate", 5.0)
+    assert seen_urls and all(u == "http://osrm.example:5000" for u in seen_urls)

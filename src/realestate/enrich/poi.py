@@ -1,6 +1,7 @@
 import logging
 import math
 from collections.abc import Callable
+from typing import TypedDict
 
 import requests
 
@@ -9,7 +10,13 @@ logger = logging.getLogger(__name__)
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 
-def fetch_bucharest_subway_stations() -> list[dict]:
+class Station(TypedDict):
+    name: str
+    lat: float
+    lon: float
+
+
+def fetch_bucharest_subway_stations() -> list[Station]:
     query = """
     [out:json][timeout:25];
     area["name"="Bucuresti"]["admin_level"="4"]->.searchArea;
@@ -23,7 +30,11 @@ def fetch_bucharest_subway_stations() -> list[dict]:
     response.raise_for_status()
     elements = response.json()["elements"]
     return [
-        {"name": el.get("tags", {}).get("name", "unknown"), "lat": el["lat"], "lon": el["lon"]}
+        Station(
+            name=el.get("tags", {}).get("name", "unknown"),
+            lat=el["lat"],
+            lon=el["lon"],
+        )
         for el in elements
     ]
 
@@ -52,7 +63,7 @@ def osrm_walking_minutes(
 def nearest_subway_station(
     lat: float,
     lon: float,
-    stations: list[dict],
+    stations: list[Station],
     *,
     candidates: int = 3,
     walking_fn: Callable[[float, float, float, float], float] = osrm_walking_minutes,
