@@ -14,13 +14,19 @@
   .desc { font-size: 13px; color: #333; max-height: 4.5em; overflow: hidden; }
   #status { color: #888; font-size: 13px; margin-top: 8px; }
   #strict-label { display: block; font-size: 13px; color: #333; margin-top: 8px; }
+  #search-help { color: #555; font-size: 13px; line-height: 1.5; margin: 6px 0; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .badge { border-radius: 12px; padding: 3px 8px; font-size: 12px; }
+  .exact .badge { background: #e7f4ec; color: #21623b; }
+  .near .badge { background: #fff2d6; color: #7a4b00; }
 </style>
 </head>
 <body>
   <h1>Real estate semantic search (demo)</h1>
   <input id="q" type="text" placeholder="e.g. apartament luminos, 2 camere, buget maxim 150000 euro" autofocus>
-  <label id="strict-label"><input id="strict" type="checkbox"> Strict filtering (exact budget &amp; sector)</label>
-  <div id="status"></div>
+  <label id="strict-label"><input id="strict" type="checkbox" aria-describedby="search-help"> Strict filtering (exact matches only)</label>
+  <p id="search-help">Exact matches appear first. Unless strict filtering is on, empty slots are filled with labelled near-misses: up to 15% over budget or in neighbouring sectors. Room and subway limits stay exact.</p>
+  <div id="status" role="status" aria-live="polite"></div>
   <div id="results"></div>
 
 <script>
@@ -54,8 +60,10 @@ async function runSearch() {
 }
 
 function renderResult(r) {
+  const labels = r.is_exact_match ? ["Exact match"] : ["Near match", ...r.match_labels];
   return `
-    <div class="result">
+    <div class="result ${r.is_exact_match ? "exact" : "near"}">
+      <div class="badges">${labels.map(label => `<span class="badge">${escapeHtml(label)}</span>`).join("")}</div>
       <h3>${escapeHtml(r.title)}</h3>
       <div class="meta">${r.price_eur.toLocaleString()} EUR · ${r.rooms ?? "?"} rooms · ${r.built_area_sqm ?? "?"} m² · sector ${r.sector ?? "?"} · ${escapeHtml(r.address_text)}</div>
       <div class="score">similarity: ${r.score.toFixed(3)}</div>

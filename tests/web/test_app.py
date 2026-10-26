@@ -28,18 +28,26 @@ class _FakeEmbedder:
 class _FakeResult:
     score: float
     payload: dict
+    id: str = "listing"
 
 
 @dataclass
 class _FakeStore:
     results: list = field(default_factory=list)
     last_sectors: list[int] | None = None
+    calls: list[dict] = field(default_factory=list)
 
     def query(
         self, vector, *, price_max=None, rooms=None, sectors=None, max_subway_minutes=None, limit=10
     ):
         self.last_sectors = sectors
-        return self.results
+        self.calls.append({"sectors": sectors, "price_max": price_max, "limit": limit})
+        return [
+            r
+            for r in self.results
+            if (price_max is None or r.payload["price_eur"] <= price_max)
+            and (sectors is None or r.payload.get("sector") in sectors)
+        ][:limit]
 
 
 def _get(path: str, params: dict, *, parser: _FakeParser, store: _FakeStore):
@@ -84,6 +92,8 @@ def test_api_search_maps_payload_fields_through_injected_dependencies():
             "address_text": "Sectorul 2",
             "sector": 2,
             "description": "luminoasa",
+            "is_exact_match": True,
+            "match_labels": [],
         }
     ]
 
@@ -116,3 +126,62 @@ def test_api_search_is_flexible_by_default_and_strict_when_asked():
 
     assert flexible_store.last_sectors == [1, 2, 3]
     assert strict_store.last_sectors == [2]
+
+
+def _listing(point_id: str, *, price: float, sector: int, score: float) -> _FakeResult:
+    return _FakeResult(
+        id=point_id,
+        score=score,
+        payload={
+            "title": point_id,
+            "price_eur": price,
+            "rooms": 2,
+            "built_area_sqm": 50,
+            "address_text": f"Sectorul {sector}",
+            "sector": sector,
+            "description": "bright apartment",
+        },
+    )
+
+
+def test_api_search_returns_exact_matches_first_with_explanations_for_near_misses():
+    store = _FakeStore(
+        results=[
+            _listing("near", price=106000, sector=3, score=0.99),
+            _listing("exact", price=100000, sector=2, score=0.2),
+        ]
+    )
+    response = _get(
+        "/api/search",
+        {"q": "sector 2 max 100000 EUR", "limit": 2},
+        parser=_FakeParser(filters={"price_max": 100000, "sector": 2}),
+        store=store,
+    )
+
+    assert response.status_code == 200
+    exact, near = response.json()
+    assert exact["title"] == "exact"
+    assert exact["is_exact_match"] is True
+    assert exact["match_labels"] == []
+    assert near["title"] == "near"
+    assert near["is_exact_match"] is False
+    assert near["match_labels"] == ["+6% over budget", "sector 3 (neighbouring)"]
+
+
+def test_api_strict_search_never_returns_near_misses():
+    store = _FakeStore(
+        results=[
+            _listing("near", price=106000, sector=3, score=0.99),
+            _listing("exact", price=100000, sector=2, score=0.2),
+        ]
+    )
+    response = _get(
+        "/api/search",
+        {"q": "sector 2 max 100000 EUR", "strict": True},
+        parser=_FakeParser(filters={"price_max": 100000, "sector": 2}),
+        store=store,
+    )
+
+    assert response.status_code == 200
+    assert [r["title"] for r in response.json()] == ["exact"]
+    assert len(store.calls) == 1

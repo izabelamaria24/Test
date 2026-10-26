@@ -73,6 +73,8 @@ def api_search(
             # Points ingested before the sector field existed don't have the key.
             "sector": r.payload.get("sector"),
             "description": r.payload["description"],
+            "is_exact_match": r.is_exact_match,
+            "match_labels": r.match_labels,
         }
         for r in results
     ]
