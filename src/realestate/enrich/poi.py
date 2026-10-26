@@ -1,7 +1,7 @@
 import logging
 import math
 from collections.abc import Callable
-from typing import TypedDict
+from typing import TypedDict, TypeGuard
 
 import requests
 
@@ -28,15 +28,26 @@ def fetch_bucharest_subway_stations() -> list[Station]:
     """
     response = requests.post(OVERPASS_URL, data={"data": query}, timeout=30)
     response.raise_for_status()
-    elements = response.json()["elements"]
-    return [
-        Station(
-            name=el.get("tags", {}).get("name", "unknown"),
-            lat=el["lat"],
-            lon=el["lon"],
+    return parse_overpass_stations(response.json()["elements"])
+
+
+def _is_coordinate(value: object) -> TypeGuard[float]:
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def parse_overpass_stations(elements: list[dict]) -> list[Station]:
+    stations: list[Station] = []
+    for el in elements:
+        lat, lon = el.get("lat"), el.get("lon")
+        if not (_is_coordinate(lat) and _is_coordinate(lon)):
+            continue
+        stations.append(Station(name=el.get("tags", {}).get("name", "unknown"), lat=lat, lon=lon))
+    skipped = len(elements) - len(stations)
+    if skipped:
+        logger.warning(
+            "skipped %d Overpass station record(s) with missing/invalid coordinates", skipped
         )
-        for el in elements
-    ]
+    return stations
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

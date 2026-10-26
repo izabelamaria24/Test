@@ -2,7 +2,7 @@ import functools
 
 import requests
 
-from realestate.enrich.poi import haversine_km, nearest_subway_station
+from realestate.enrich.poi import haversine_km, nearest_subway_station, parse_overpass_stations
 
 STATIONS = [
     {"name": "Piata Unirii", "lat": 44.4278, "lon": 26.1030},
@@ -101,3 +101,32 @@ def test_nearest_subway_station_accepts_partially_bound_walking_fn():
 
     assert result == ("Universitate", 5.0)
     assert seen_urls and all(u == "http://osrm.example:5000" for u in seen_urls)
+
+
+def test_parse_overpass_stations_builds_stations_from_valid_records():
+    elements = [
+        {"lat": 44.4278, "lon": 26.1030, "tags": {"name": "Piata Unirii"}},
+        {"lat": 44, "lon": 26},  # ints are valid; missing name falls back
+    ]
+
+    assert parse_overpass_stations(elements) == [
+        {"name": "Piata Unirii", "lat": 44.4278, "lon": 26.1030},
+        {"name": "unknown", "lat": 44, "lon": 26},
+    ]
+
+
+def test_parse_overpass_stations_skips_records_with_missing_or_invalid_coordinates():
+    valid = {"lat": 44.4278, "lon": 26.1030, "tags": {"name": "Piata Unirii"}}
+    elements = [
+        {"lon": 26.1, "tags": {"name": "no lat"}},
+        {"lat": 44.4, "tags": {"name": "no lon"}},
+        {"lat": "44.4", "lon": 26.1, "tags": {"name": "string lat"}},
+        {"lat": None, "lon": 26.1, "tags": {"name": "null lat"}},
+        {"lat": True, "lon": 26.1, "tags": {"name": "bool lat"}},
+        {"lat": float("nan"), "lon": 26.1, "tags": {"name": "nan lat"}},
+        valid,
+    ]
+
+    stations = parse_overpass_stations(elements)
+
+    assert [s["name"] for s in stations] == ["Piata Unirii"]
