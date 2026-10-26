@@ -13,11 +13,15 @@ class ParsedQuery(BaseModel):
 _PARSE_PROMPT = """Extract structured filters and the remaining semantic intent from this \
 real estate search query. Respond with ONLY a JSON object of the form:
 {{"filters": {{"price_max": <number or omit>, "rooms": <number or omit>, \
-"max_subway_minutes": <number or omit>}}, "semantic_text": "<remaining descriptive text>"}}
+"sector": <1-6 or omit>, "max_subway_minutes": <number or omit>}}, \
+"semantic_text": "<remaining descriptive text>"}}
 
 Only include a filter if the query states an actual number for it. Vague qualitative phrases \
 like "close to the subway" or "near downtown" are NOT numbers - do not invent one. Omit the \
 filter entirely in that case and leave the phrase in semantic_text instead.
+
+Only set "sector" when the query names a Bucharest sector number (e.g. "sector 2", \
+"sectorul 3"); otherwise omit it.
 
 Query: {query}
 """
@@ -27,15 +31,18 @@ def _default_post(url: str, json: dict, timeout: int):
     return requests.post(url, json=json, timeout=timeout)
 
 
-def _drop_implausible_filters(filters: dict) -> dict:
+def _is_plausible_filter(key: str, value: object) -> bool:
+    if key == "sector":
+        # Retrieval looks sectors up in a fixed 1-6 table, so anything else must not get through.
+        return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 6
     # A real constraint is never "0 or less" for any of these - price_max/rooms/
     # max_subway_minutes <= 0 means the model invented a threshold from vague language
     # (e.g. "close to the subway" -> max_subway_minutes: 0) rather than an actual stated number.
-    return {
-        key: value
-        for key, value in filters.items()
-        if not (isinstance(value, (int, float)) and value <= 0)
-    }
+    return not (isinstance(value, (int, float)) and value <= 0)
+
+
+def _drop_implausible_filters(filters: dict) -> dict:
+    return {key: value for key, value in filters.items() if _is_plausible_filter(key, value)}
 
 
 class OllamaQueryParser:

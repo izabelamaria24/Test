@@ -5,6 +5,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PointStruct,
     Range,
@@ -49,6 +50,7 @@ class QdrantListingStore:
         *,
         price_max: float | None = None,
         rooms: int | None = None,
+        sectors: list[int] | None = None,
         max_subway_minutes: float | None = None,
         limit: int = 10,
     ) -> list:
@@ -57,6 +59,8 @@ class QdrantListingStore:
             must.append(FieldCondition(key="price_eur", range=Range(lte=price_max)))
         if rooms is not None:
             must.append(FieldCondition(key="rooms", match=MatchValue(value=rooms)))
+        if sectors:
+            must.append(FieldCondition(key="sector", match=MatchAny(any=sectors)))
         if max_subway_minutes is not None:
             must.append(
                 FieldCondition(key="subway_walking_minutes", range=Range(lte=max_subway_minutes))

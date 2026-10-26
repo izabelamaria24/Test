@@ -39,6 +39,7 @@ def test_enrich_listing_uses_map_coordinates_without_geocoding(tmp_path):
     assert enriched.floor_number == 3
     assert enriched.latitude == 44.42
     assert enriched.longitude == 26.1
+    assert enriched.sector == 3
     assert enriched.location_confidence == "ok"
     assert enriched.nearest_subway_station == "Universitate"
     assert enriched.subway_walking_minutes == 6.5

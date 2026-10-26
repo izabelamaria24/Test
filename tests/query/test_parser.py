@@ -1,3 +1,7 @@
+import json as json_module
+
+import pytest
+
 from realestate.query.parser import OllamaQueryParser
 
 
@@ -123,3 +127,32 @@ def test_parse_keeps_positive_filter_values():
     result = parser.parse("x")
 
     assert result.filters == {"price_max": 150000, "rooms": 2, "max_subway_minutes": 15}
+
+
+def test_parse_extracts_bucharest_sector():
+    def fake_post(url, json, timeout):
+        return FakeResponse(
+            {
+                "response": (
+                    '{"filters": {"price_max": 75000, "rooms": 1, "sector": 2}, '
+                    '"semantic_text": "apartament"}'
+                )
+            }
+        )
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("apartament o camera sub 75000 euro sector 2")
+
+    assert result.filters["sector"] == 2
+
+
+@pytest.mark.parametrize("bad_sector", [7, 0, "2", True, 2.5])
+def test_parse_drops_sector_outside_1_to_6(bad_sector):
+    def fake_post(url, json, timeout):
+        payload = {"filters": {"price_max": 100000, "sector": bad_sector}, "semantic_text": "x"}
+        return FakeResponse({"response": json_module.dumps(payload)})
+
+    parser = OllamaQueryParser(post_fn=fake_post)
+    result = parser.parse("x")
+
+    assert result.filters == {"price_max": 100000}

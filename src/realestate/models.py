@@ -29,6 +29,8 @@ class EnrichedListing(BaseModel):
     construction_year_range: str | None
     layout_type: str | None
     address_text: str
+    # Defaults to None so payloads stored before this field existed still load.
+    sector: int | None = None
     latitude: float | None
     longitude: float | None
     location_confidence: str

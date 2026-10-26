@@ -13,16 +13,19 @@
   .score { color: #888; font-size: 12px; }
   .desc { font-size: 13px; color: #333; max-height: 4.5em; overflow: hidden; }
   #status { color: #888; font-size: 13px; margin-top: 8px; }
+  #strict-label { display: block; font-size: 13px; color: #333; margin-top: 8px; }
 </style>
 </head>
 <body>
   <h1>Real estate semantic search (demo)</h1>
   <input id="q" type="text" placeholder="e.g. apartament luminos, 2 camere, buget maxim 150000 euro" autofocus>
+  <label id="strict-label"><input id="strict" type="checkbox"> Strict filtering (exact budget &amp; sector)</label>
   <div id="status"></div>
   <div id="results"></div>
 
 <script>
 const q = document.getElementById("q");
+const strictEl = document.getElementById("strict");
 const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
 let timer = null;
@@ -31,6 +34,7 @@ q.addEventListener("input", () => {
   clearTimeout(timer);
   timer = setTimeout(runSearch, 400);
 });
+strictEl.addEventListener("change", runSearch);
 
 async function runSearch() {
   const query = q.value.trim();
@@ -39,7 +43,7 @@ async function runSearch() {
 
   statusEl.textContent = "Searching...";
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=3`);
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=3&strict=${strictEl.checked}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const listings = await res.json();
     statusEl.textContent = `${listings.length} result(s)`;
@@ -53,7 +57,7 @@ function renderResult(r) {
   return `
     <div class="result">
       <h3>${escapeHtml(r.title)}</h3>
-      <div class="meta">${r.price_eur.toLocaleString()} EUR · ${r.rooms ?? "?"} rooms · ${r.built_area_sqm ?? "?"} m² · ${escapeHtml(r.address_text)}</div>
+      <div class="meta">${r.price_eur.toLocaleString()} EUR · ${r.rooms ?? "?"} rooms · ${r.built_area_sqm ?? "?"} m² · sector ${r.sector ?? "?"} · ${escapeHtml(r.address_text)}</div>
       <div class="score">similarity: ${r.score.toFixed(3)}</div>
       <div class="desc">${escapeHtml(r.description)}</div>
     </div>`;
