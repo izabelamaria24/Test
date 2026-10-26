@@ -30,9 +30,11 @@ few high-signal findings over many nits.
 - **Thundering herd.** Under concurrency, an un-synchronised lazy loader lets
   multiple requests build the same model at once. Flag `lru_cache`-only lazy
   loads on hot paths without a startup warmup or lock.
-- **Close what you open.** `requests.Session`, DB clients, file handles, and
-  torch resources must be closed (context manager or shutdown hook). Flag
-  self-created clients that are never released.
+- **Close what you open.** Resources with an explicit release API —
+  `requests.Session`, DB/vector-store clients, file handles — must be closed
+  (context manager or shutdown hook). Flag self-created clients that are never
+  released. Models and tensors have no `close()`; only flag framework teardown
+  where it exists (e.g. `torch.distributed.destroy_process_group()`).
 - **Inference mode (torch).** Serving/eval paths should call `model.eval()`
   (switches Dropout/BatchNorm to inference behaviour) *and* wrap inference in
   `torch.inference_mode()` / `torch.no_grad()` when autograd outputs aren't
@@ -62,8 +64,9 @@ few high-signal findings over many nits.
   is desirable. Flag claims that IR metrics validate subjective quality.
 - **Determinism.** Set/seed RNG (`random`, `numpy`, `torch`) where results feed
   assertions or reported numbers. Flag seed-free stochastic eval/tests.
-- **Pinned model versions.** Reproducible results require pinned model + library
-  versions (committed lockfile). Flag floating model tags in eval.
+- **Pinned model versions.** A lockfile pins Python packages, not remote model
+  weights. Reproducible results also need immutable model/tokenizer revisions
+  (commit hash or digest) recorded as eval inputs. Flag floating model tags.
 
 ## 4. Embeddings & retrieval
 
@@ -87,7 +90,9 @@ few high-signal findings over many nits.
 - **Batch, don't loop.** Per-item `model.encode` in a loop over many items is
   slow; batch it. Flag N-call loops where a batch call exists.
 - **Don't recompute.** Re-embedding unchanged data on every run wastes compute;
-  ingestion should be idempotent (deterministic IDs). Flag full re-embeds.
+  ingestion should be idempotent: deterministic IDs *plus* upsert/replace
+  semantics and retry-safe writes (append-only inserts duplicate vectors on
+  retry). Flag full re-embeds and insert-only writes.
 - **Blocking work in async paths.** CPU/GPU-bound inference inside `async def`
   handlers blocks the event loop. Flag heavy sync work in async endpoints.
 
