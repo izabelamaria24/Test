@@ -1,6 +1,8 @@
+import functools
+
 import requests
 
-from realestate.enrich.poi import haversine_km, nearest_subway_station
+from realestate.enrich.poi import haversine_km, nearest_subway_station, parse_overpass_stations
 
 STATIONS = [
     {"name": "Piata Unirii", "lat": 44.4278, "lon": 26.1030},
@@ -20,7 +22,7 @@ def test_haversine_km_matches_known_approx_distance():
 
 
 def test_nearest_subway_station_picks_shortest_walking_time():
-    def fake_walking_fn(lat1, lon1, lat2, lon2, osrm_url="http://localhost:5000"):
+    def fake_walking_fn(lat1, lon1, lat2, lon2):
         # Simulate: Universitate is closest by straight-line but has a slow walking route;
         # Piata Unirii is farther by straight-line but has the fastest actual walk.
         if (lat2, lon2) == (44.4356, 26.1023):
@@ -44,7 +46,7 @@ def test_nearest_subway_station_skips_candidate_when_walking_fn_raises():
     # Universitate is closest by straight-line but OSRM fails to route to it (e.g. transient
     # network error); the orchestrator should fall back to the next-best candidate instead of
     # crashing the whole lookup.
-    def flaky_walking_fn(lat1, lon1, lat2, lon2, osrm_url="http://localhost:5000"):
+    def flaky_walking_fn(lat1, lon1, lat2, lon2):
         if (lat2, lon2) == (44.4356, 26.1023):
             raise requests.RequestException("OSRM unreachable")
         if (lat2, lon2) == (44.4278, 26.1030):
@@ -62,7 +64,7 @@ def test_nearest_subway_station_skips_candidate_when_walking_fn_raises_value_err
     # Universitate is closest by straight-line but OSRM genuinely can't find a walking
     # route to it (e.g. "NoRoute"), which osrm_walking_minutes surfaces as a ValueError;
     # the orchestrator should fall back to the next-best candidate instead of crashing.
-    def no_route_walking_fn(lat1, lon1, lat2, lon2, osrm_url="http://localhost:5000"):
+    def no_route_walking_fn(lat1, lon1, lat2, lon2):
         if (lat2, lon2) == (44.4356, 26.1023):
             raise ValueError("OSRM route failed: NoRoute")
         if (lat2, lon2) == (44.4278, 26.1030):
@@ -77,9 +79,54 @@ def test_nearest_subway_station_skips_candidate_when_walking_fn_raises_value_err
 
 
 def test_nearest_subway_station_returns_none_when_all_candidates_fail():
-    def always_fails(lat1, lon1, lat2, lon2, osrm_url="http://localhost:5000"):
+    def always_fails(lat1, lon1, lat2, lon2):
         raise requests.RequestException("OSRM unreachable")
 
     result = nearest_subway_station(44.430, 26.102, STATIONS, candidates=3, walking_fn=always_fails)
 
     assert result is None
+
+
+def test_nearest_subway_station_accepts_partially_bound_walking_fn():
+    # Custom OSRM URLs are now supplied by binding the arg (functools.partial),
+    # not via a nearest_subway_station parameter.
+    seen_urls: list[str] = []
+
+    def walking_fn_with_url(lat1, lon1, lat2, lon2, *, osrm_url):
+        seen_urls.append(osrm_url)
+        return 5.0 if (lat2, lon2) == (44.4356, 26.1023) else 30.0
+
+    bound = functools.partial(walking_fn_with_url, osrm_url="http://osrm.example:5000")
+    result = nearest_subway_station(44.435, 26.102, STATIONS, candidates=3, walking_fn=bound)
+
+    assert result == ("Universitate", 5.0)
+    assert seen_urls and all(u == "http://osrm.example:5000" for u in seen_urls)
+
+
+def test_parse_overpass_stations_builds_stations_from_valid_records():
+    elements = [
+        {"lat": 44.4278, "lon": 26.1030, "tags": {"name": "Piata Unirii"}},
+        {"lat": 44, "lon": 26},  # ints are valid; missing name falls back
+    ]
+
+    assert parse_overpass_stations(elements) == [
+        {"name": "Piata Unirii", "lat": 44.4278, "lon": 26.1030},
+        {"name": "unknown", "lat": 44, "lon": 26},
+    ]
+
+
+def test_parse_overpass_stations_skips_records_with_missing_or_invalid_coordinates():
+    valid = {"lat": 44.4278, "lon": 26.1030, "tags": {"name": "Piata Unirii"}}
+    elements = [
+        {"lon": 26.1, "tags": {"name": "no lat"}},
+        {"lat": 44.4, "tags": {"name": "no lon"}},
+        {"lat": "44.4", "lon": 26.1, "tags": {"name": "string lat"}},
+        {"lat": None, "lon": 26.1, "tags": {"name": "null lat"}},
+        {"lat": True, "lon": 26.1, "tags": {"name": "bool lat"}},
+        {"lat": float("nan"), "lon": 26.1, "tags": {"name": "nan lat"}},
+        valid,
+    ]
+
+    stations = parse_overpass_stations(elements)
+
+    assert [s["name"] for s in stations] == ["Piata Unirii"]
