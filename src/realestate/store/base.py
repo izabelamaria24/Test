@@ -10,6 +10,7 @@ class VectorStore(Protocol):
         *,
         price_max: float | None = None,
         rooms: int | None = None,
+        sectors: list[int] | None = None,
         max_subway_minutes: float | None = None,
         limit: int = 10,
     ) -> list: ...

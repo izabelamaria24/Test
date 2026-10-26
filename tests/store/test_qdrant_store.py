@@ -49,6 +49,21 @@ def test_query_filters_by_max_subway_minutes(store):
     assert "far" not in ids
 
 
+def test_query_filters_by_sectors(store):
+    vector = [0.1] * 768
+    store.upsert("s2", vector, {"price_eur": 100000, "rooms": 1, "sector": 2})
+    store.upsert("s5", vector, {"price_eur": 100000, "rooms": 1, "sector": 5})
+    store.upsert("ilfov", vector, {"price_eur": 100000, "rooms": 1, "sector": None})
+
+    exact = [r.payload["external_id"] for r in store.query(vector, sectors=[2], limit=10)]
+    widened = [r.payload["external_id"] for r in store.query(vector, sectors=[1, 2, 3], limit=10)]
+    unfiltered = [r.payload["external_id"] for r in store.query(vector, limit=10)]
+
+    assert exact == ["s2"]
+    assert widened == ["s2"]
+    assert set(unfiltered) == {"s2", "s5", "ilfov"}
+
+
 def test_list_all_returns_upserted_points(store):
     vector = [0.1] * 768
     store.upsert("one", vector, {"price_eur": 100000, "rooms": 1, "subway_walking_minutes": 5.0})

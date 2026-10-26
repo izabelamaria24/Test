@@ -31,7 +31,9 @@ class _FakeResult:
 class _FakeStore:
     results: list = field(default_factory=list)
 
-    def query(self, vector, *, price_max=None, rooms=None, max_subway_minutes=None, limit=10):
+    def query(
+        self, vector, *, price_max=None, rooms=None, sectors=None, max_subway_minutes=None, limit=10
+    ):
         return self.results
 
 
