@@ -1,7 +1,12 @@
 from collections.abc import Callable
 
 from realestate.enrich.geocoder import CachedGeocoder
-from realestate.enrich.normalizer import normalize_price_eur, normalize_rooms, normalize_specs
+from realestate.enrich.normalizer import (
+    normalize_price_eur,
+    normalize_rooms,
+    normalize_sector,
+    normalize_specs,
+)
 from realestate.enrich.poi import nearest_subway_station
 from realestate.models import EnrichedListing, RawListing
 
@@ -42,6 +47,7 @@ def enrich_listing(
         construction_year_range=specs.get("construction_year_range"),
         layout_type=specs.get("layout_type"),
         address_text=raw.address_raw,
+        sector=normalize_sector(raw.address_raw),
         latitude=latitude,
         longitude=longitude,
         location_confidence=location_confidence,

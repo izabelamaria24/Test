@@ -42,6 +42,12 @@ def normalize_rooms(title: str) -> int | None:
     return None
 
 
+def normalize_sector(address_text: str) -> int | None:
+    # OLX Bucharest addresses end like "Bucuresti, Sectorul 2"; Ilfov listings have no sector.
+    match = re.search(r"\bsector(?:ul)?\s*([1-6])\b", address_text, re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
 def normalize_specs(specs: dict[str, str]) -> "NormalizedSpecs":
     normalized: dict[str, object] = {
         "built_area_sqm": None,

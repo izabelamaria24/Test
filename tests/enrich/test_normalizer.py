@@ -1,8 +1,24 @@
 from realestate.enrich.normalizer import (
     normalize_price_eur,
     normalize_rooms,
+    normalize_sector,
     normalize_specs,
 )
+
+
+def test_normalize_sector_reads_sectorul_from_olx_address():
+    assert normalize_sector("Bucuresti - Ilfov, Bucuresti, Sectorul 2") == 2
+
+
+def test_normalize_sector_reads_short_and_lowercase_forms():
+    assert normalize_sector("Bucuresti, Sector 5") == 5
+    assert normalize_sector("bucuresti, sectorul 6") == 6
+
+
+def test_normalize_sector_returns_none_without_a_valid_sector():
+    assert normalize_sector("Ilfov, Voluntari") is None
+    assert normalize_sector("Bucuresti, Sector 7") is None
+    assert normalize_sector("Bucuresti, Sector 12") is None
 
 
 def test_normalize_price_eur_parses_dotted_thousands():

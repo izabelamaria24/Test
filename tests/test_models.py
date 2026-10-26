@@ -40,3 +40,5 @@ def test_enriched_listing_defaults_for_missing_location():
     )
     assert listing.location_confidence == "low_confidence_location"
     assert listing.latitude is None
+    # Payloads stored before sector existed must still load.
+    assert listing.sector is None
