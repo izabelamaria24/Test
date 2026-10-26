@@ -3,9 +3,12 @@
 Usage: python -m realestate.eval.run_eval
 """
 
+import requests
+
 from realestate.embed.sentence_embedder import MultilingualE5Embedder
 from realestate.eval.generate_queries import generate_eval_query
 from realestate.eval.metrics import evaluate
+from realestate.models import EnrichedListing
 from realestate.query.parser import OllamaQueryParser
 from realestate.query.retrieval import search
 from realestate.store.qdrant_store import QdrantListingStore
@@ -20,8 +23,6 @@ if __name__ == "__main__":
     all_points = store.list_all(limit=1000)
 
     def ollama_generate(prompt: str) -> str:
-        import requests
-
         response = requests.post(
             "http://localhost:11434/api/generate",
             # think: False is required for reasoning-capable models (e.g. qwen3.6) - without
@@ -35,8 +36,6 @@ if __name__ == "__main__":
     query_failures = []
     for point in all_points:
         payload = point.payload
-        from realestate.models import EnrichedListing
-
         listing = EnrichedListing(
             **{k: v for k, v in payload.items() if k != "external_id"}
             | {"external_id": payload["external_id"]}
