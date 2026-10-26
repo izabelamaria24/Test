@@ -56,11 +56,12 @@ def index() -> FileResponse:
 def api_search(
     q: str,
     limit: int = 3,
+    strict: bool = False,
     embedder: MultilingualE5Embedder = Depends(get_embedder),
     parser: OllamaQueryParser = Depends(get_parser),
     store: QdrantListingStore = Depends(get_store),
 ) -> list[dict]:
-    results = search(q, parser=parser, embedder=embedder, store=store, limit=limit)
+    results = search(q, parser=parser, embedder=embedder, store=store, limit=limit, strict=strict)
     return [
         {
             "score": r.score,
@@ -69,6 +70,8 @@ def api_search(
             "rooms": r.payload["rooms"],
             "built_area_sqm": r.payload["built_area_sqm"],
             "address_text": r.payload["address_text"],
+            # Points ingested before the sector field existed don't have the key.
+            "sector": r.payload.get("sector"),
             "description": r.payload["description"],
         }
         for r in results
