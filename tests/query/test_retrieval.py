@@ -90,6 +90,30 @@ def test_flexible_search_keeps_rooms_exact():
     assert _search({"rooms": 2}, strict=False)["rooms"] == 2
 
 
+def _search_with_margin(*, strict: bool, margin: float) -> dict:
+    store = FakeStore()
+    search(
+        "query",
+        parser=FakeParser(
+            ParsedQuery(filters={"price_max": 100000}, semantic_text="bright hardwood floors")
+        ),
+        embedder=FakeEmbedder(),
+        store=store,
+        strict=strict,
+        flexible_price_margin=margin,
+    )
+    assert store.last_call_kwargs is not None
+    return store.last_call_kwargs
+
+
+def test_flexible_search_uses_the_given_price_margin():
+    assert _search_with_margin(strict=False, margin=1.3)["price_max"] == pytest.approx(130000)
+
+
+def test_strict_search_ignores_the_price_margin():
+    assert _search_with_margin(strict=True, margin=1.3)["price_max"] == 100000
+
+
 @pytest.mark.parametrize("strict", [True, False])
 def test_search_without_sector_or_price_sends_no_such_filters(strict):
     kwargs = _search({}, strict=strict)

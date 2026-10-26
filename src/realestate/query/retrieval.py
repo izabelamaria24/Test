@@ -10,7 +10,7 @@ _SECTOR_WITH_NEIGHBOURS: dict[int, tuple[int, int, int]] = {
     5: (4, 5, 6),
     6: (1, 5, 6),
 }
-_FLEXIBLE_PRICE_MARGIN = 1.15
+DEFAULT_FLEXIBLE_PRICE_MARGIN = 1.15
 
 
 def search(
@@ -21,6 +21,7 @@ def search(
     store: VectorStore,
     limit: int = 10,
     strict: bool = False,
+    flexible_price_margin: float = DEFAULT_FLEXIBLE_PRICE_MARGIN,
 ) -> list:
     parsed = parser.parse(query)
     price_max = parsed.filters.get("price_max")
@@ -30,7 +31,7 @@ def search(
         sectors = [sector] if sector is not None else None
     else:
         if price_max is not None:
-            price_max *= _FLEXIBLE_PRICE_MARGIN
+            price_max *= flexible_price_margin
         sectors = list(_SECTOR_WITH_NEIGHBOURS[sector]) if sector is not None else None
 
     vector = embedder.embed_query(parsed.semantic_text)
