@@ -60,4 +60,5 @@ def parse_olx_listing_html(html: str, external_id: str) -> RawListing:
         source_file=f"{external_id}.html",
         map_lat=map_data.get("lat"),
         map_lon=map_data.get("lon"),
+        map_radius_km=map_data.get("radius"),
     )

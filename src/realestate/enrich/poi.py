@@ -5,6 +5,8 @@ from typing import TypedDict, TypeGuard
 
 import requests
 
+from realestate.enrich.geocoder import USER_AGENT
+
 logger = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -26,7 +28,9 @@ def fetch_bucharest_subway_stations() -> list[Station]:
     );
     out body;
     """
-    response = requests.post(OVERPASS_URL, data={"data": query}, timeout=30)
+    response = requests.post(
+        OVERPASS_URL, data={"data": query}, headers={"User-Agent": USER_AGENT}, timeout=30
+    )
     response.raise_for_status()
     return parse_overpass_stations(response.json()["elements"])
 

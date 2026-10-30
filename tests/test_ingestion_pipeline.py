@@ -2,6 +2,7 @@ import copy
 from pathlib import Path
 
 from realestate.enrich.geocoder import CachedGeocoder, GeocodeResult
+from realestate.enrich.location_clues import LocationClues
 from realestate.ingestion_pipeline import run_ingestion
 from tests.ingest.test_olx_parser import SAMPLE_AD, SAMPLE_HTML, _build_sample_html
 
@@ -82,3 +83,30 @@ def test_run_ingestion_quarantines_enrich_failures_without_aborting_batch(tmp_pa
     assert len(report.enrich_failures) == 1
     assert report.enrich_failures[0][0] == "999999999"
     assert store.upserted[0][0] == "304473136"
+
+
+def test_run_ingestion_locates_listings_from_their_text(tmp_path: Path):
+    (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
+
+    class StreetExtractor:
+        def extract(self, title: str, description: str) -> LocationClues:
+            return LocationClues(street="Strada Sibiu")
+
+    geocoder = CachedGeocoder(
+        cache_path=tmp_path / "cache.json",
+        geocode_fn=lambda address: GeocodeResult(latitude=44.43, longitude=26.10),
+    )
+    store = FakeStore()
+
+    run_ingestion(
+        tmp_path,
+        geocoder=geocoder,
+        stations=[],
+        embedder=FakeEmbedder(),
+        store=store,
+        clue_extractor=StreetExtractor(),
+    )
+
+    payload = store.upserted[0][2]
+    assert payload["location_source"] == "street"
+    assert payload["latitude"] == 44.43

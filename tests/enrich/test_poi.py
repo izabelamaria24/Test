@@ -2,7 +2,38 @@ import functools
 
 import requests
 
-from realestate.enrich.poi import haversine_km, nearest_subway_station, parse_overpass_stations
+from realestate.enrich import poi
+from realestate.enrich.geocoder import USER_AGENT
+from realestate.enrich.poi import (
+    fetch_bucharest_subway_stations,
+    haversine_km,
+    nearest_subway_station,
+    parse_overpass_stations,
+)
+
+
+def test_fetch_stations_identifies_itself_to_overpass(monkeypatch):
+    # Overpass answers 406 to the default python-requests User-Agent.
+    sent_headers: list[dict] = []
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict:
+            return {"elements": [{"lat": 44.42, "lon": 26.14, "tags": {"name": "Dristor 1"}}]}
+
+    def fake_post(url, data, headers, timeout):
+        sent_headers.append(headers)
+        return _Response()
+
+    monkeypatch.setattr(poi.requests, "post", fake_post)
+
+    stations = fetch_bucharest_subway_stations()
+
+    assert sent_headers == [{"User-Agent": USER_AGENT}]
+    assert stations == [{"name": "Dristor 1", "lat": 44.42, "lon": 26.14}]
+
 
 STATIONS = [
     {"name": "Piata Unirii", "lat": 44.4278, "lon": 26.1030},

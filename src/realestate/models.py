@@ -16,6 +16,8 @@ class RawListing(BaseModel):
     # None when a listing's JSON omits map data (not observed yet, but the schema doesn't guarantee it).
     map_lat: float | None
     map_lon: float | None
+    # Blur radius OLX draws around the map point; km, judging by the values (2-5) next to zoom 11-13.
+    map_radius_km: float | None = None
 
 
 class EnrichedListing(BaseModel):
@@ -34,6 +36,10 @@ class EnrichedListing(BaseModel):
     latitude: float | None
     longitude: float | None
     location_confidence: str
+    # Which clue the coordinates came from (e.g. "building", "olx_approximate") and roughly how
+    # far off they may be. Default to None so payloads stored before these fields still load.
+    location_source: str | None = None
+    location_uncertainty_m: float | None = None
     nearest_subway_station: str | None
     subway_walking_minutes: float | None
     image_urls: list[str]

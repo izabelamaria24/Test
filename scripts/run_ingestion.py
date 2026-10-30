@@ -8,6 +8,7 @@ from pathlib import Path
 
 from realestate.embed.sentence_embedder import MultilingualE5Embedder
 from realestate.enrich.geocoder import CachedGeocoder
+from realestate.enrich.location_clues import OllamaLocationClueExtractor
 from realestate.enrich.poi import fetch_bucharest_subway_stations
 from realestate.ingest.olx_scraper import download_listings
 from realestate.ingestion_pipeline import run_ingestion
@@ -26,7 +27,12 @@ if __name__ == "__main__":
     store = QdrantListingStore()
 
     report = run_ingestion(
-        html_dir, geocoder=geocoder, stations=stations, embedder=embedder, store=store
+        html_dir,
+        geocoder=geocoder,
+        stations=stations,
+        embedder=embedder,
+        store=store,
+        clue_extractor=OllamaLocationClueExtractor(),
     )
 
     print(f"Ingested {report.succeeded} listings.")

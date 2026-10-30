@@ -82,6 +82,7 @@ def test_parses_map_coordinates():
     listing = parse_olx_listing_html(SAMPLE_HTML, external_id="304473136")
     assert listing.map_lat == 44.42
     assert listing.map_lon == 26.1
+    assert listing.map_radius_km == 3
 
 
 def test_map_coordinates_default_to_none_when_absent():
@@ -90,6 +91,7 @@ def test_map_coordinates_default_to_none_when_absent():
     listing = parse_olx_listing_html(html, external_id="304473136")
     assert listing.map_lat is None
     assert listing.map_lon is None
+    assert listing.map_radius_km is None
 
 
 def test_raises_when_state_missing_ad_key():

@@ -1,17 +1,9 @@
 from dataclasses import dataclass
 
 from realestate.embed.base import Embedder
+from realestate.sectors import SECTOR_WITH_NEIGHBOURS
 from realestate.store.base import VectorStore
 
-# Bucharest's sectors 1-6 form a clockwise ring; flexible mode also accepts each one's two neighbours.
-_SECTOR_WITH_NEIGHBOURS: dict[int, tuple[int, int, int]] = {
-    1: (1, 2, 6),
-    2: (1, 2, 3),
-    3: (2, 3, 4),
-    4: (3, 4, 5),
-    5: (4, 5, 6),
-    6: (1, 5, 6),
-}
 DEFAULT_FLEXIBLE_PRICE_MARGIN = 1.15
 
 
@@ -68,7 +60,7 @@ def search(
     flexible_price_max = (
         round(price_max * flexible_price_margin, 2) if price_max is not None else None
     )
-    flexible_sectors = list(_SECTOR_WITH_NEIGHBOURS[sector]) if sector is not None else None
+    flexible_sectors = list(SECTOR_WITH_NEIGHBOURS[sector]) if sector is not None else None
     has_wider_filters = flexible_price_max != price_max or flexible_sectors != sectors
     if not strict and len(results) < limit and has_wider_filters:
         # Request the full limit because the widened search can include every exact match again.

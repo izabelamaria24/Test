@@ -3,7 +3,9 @@ from pathlib import Path
 
 from realestate.embed.base import Embedder
 from realestate.enrich.geocoder import CachedGeocoder
+from realestate.enrich.location_clues import LocationClueExtractor
 from realestate.enrich.pipeline import enrich_listing
+from realestate.enrich.poi import Station
 from realestate.ingest.olx_loader import load_olx_html_directory
 from realestate.store.base import VectorStore
 
@@ -19,9 +21,10 @@ def run_ingestion(
     html_dir: Path,
     *,
     geocoder: CachedGeocoder,
-    stations: list[dict],
+    stations: list[Station],
     embedder: Embedder,
     store: VectorStore,
+    clue_extractor: LocationClueExtractor | None = None,
 ) -> IngestionReport:
     raw_listings, parse_failures = load_olx_html_directory(html_dir)
 
@@ -29,7 +32,9 @@ def run_ingestion(
     enrich_failures: list[tuple[str, str]] = []
     for raw in raw_listings:
         try:
-            enriched = enrich_listing(raw, geocoder=geocoder, stations=stations)
+            enriched = enrich_listing(
+                raw, geocoder=geocoder, stations=stations, clue_extractor=clue_extractor
+            )
             vector = embedder.embed_passage(enriched.description)
             store.upsert(
                 enriched.external_id,
