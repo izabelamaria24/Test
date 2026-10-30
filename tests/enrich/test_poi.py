@@ -7,9 +7,32 @@ from realestate.enrich.geocoder import USER_AGENT
 from realestate.enrich.poi import (
     fetch_bucharest_subway_stations,
     haversine_km,
+    load_subway_stations,
     nearest_subway_station,
     parse_overpass_stations,
 )
+
+DRISTOR = {"name": "Dristor 1", "lat": 44.42, "lon": 26.14}
+
+
+def test_station_list_is_fetched_once_then_read_from_cache(tmp_path):
+    cache_path = tmp_path / "stations.json"
+    calls = []
+
+    def fetch():
+        calls.append(1)
+        return [DRISTOR]
+
+    assert load_subway_stations(cache_path, fetch_fn=fetch) == [DRISTOR]
+    assert load_subway_stations(cache_path, fetch_fn=fetch) == [DRISTOR]
+    assert len(calls) == 1
+
+
+def test_empty_station_list_is_not_cached(tmp_path):
+    cache_path = tmp_path / "stations.json"
+
+    assert load_subway_stations(cache_path, fetch_fn=list) == []
+    assert not cache_path.exists()
 
 
 def test_fetch_stations_identifies_itself_to_overpass(monkeypatch):

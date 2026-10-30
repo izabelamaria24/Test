@@ -22,6 +22,7 @@ def enrich_listing(
     geocoder: CachedGeocoder,
     stations: list[Station],
     clue_extractor: LocationClueExtractor | None = None,
+    olx_point_is_default: bool = False,
     nearest_station_fn: Callable[..., tuple[str, float] | None] = nearest_subway_station,
 ) -> EnrichedListing:
     specs = normalize_specs(raw.specs)
@@ -29,7 +30,13 @@ def enrich_listing(
     clues = (
         clue_extractor.extract(raw.title, raw.description) if clue_extractor else LocationClues()
     )
-    location = locate_listing(raw, clues, geocoder=geocoder, stations=stations)
+    location = locate_listing(
+        raw,
+        clues,
+        geocoder=geocoder,
+        stations=stations,
+        olx_point_is_default=olx_point_is_default,
+    )
     is_precise = location is not None and location.uncertainty_m <= MAX_UNCERTAINTY_FOR_SUBWAY_M
 
     station_name: str | None = None
@@ -54,7 +61,8 @@ def enrich_listing(
         latitude=location.latitude if location else None,
         longitude=location.longitude if location else None,
         location_confidence="ok" if is_precise else "low_confidence_location",
-        location_source=location.source if location else None,
+        location_evidence=list(location.agreeing) if location else [],
+        location_conflicts=list(location.conflicting) if location else [],
         location_uncertainty_m=location.uncertainty_m if location else None,
         nearest_subway_station=station_name,
         subway_walking_minutes=walking_minutes,

@@ -6,10 +6,12 @@ Usage: python scripts/run_ingestion.py 100
 import sys
 from pathlib import Path
 
+import requests
+
 from realestate.embed.sentence_embedder import MultilingualE5Embedder
 from realestate.enrich.geocoder import CachedGeocoder
 from realestate.enrich.location_clues import OllamaLocationClueExtractor
-from realestate.enrich.poi import fetch_bucharest_subway_stations
+from realestate.enrich.poi import load_subway_stations
 from realestate.ingest.olx_scraper import download_listings
 from realestate.ingestion_pipeline import run_ingestion
 from realestate.store.qdrant_store import QdrantListingStore
@@ -21,8 +23,12 @@ if __name__ == "__main__":
     newly_downloaded = download_listings(target_count, html_dir)
     print(f"Downloaded {len(newly_downloaded)} new listings (target: {target_count} total on disk).")
 
-    geocoder = CachedGeocoder(cache_path=Path("data/cache/geocode_cache.json"))
-    stations = fetch_bucharest_subway_stations()
+    geocoder = CachedGeocoder(cache_path=Path("data/cache/places_cache.json"))
+    try:
+        stations = load_subway_stations(Path("data/cache/subway_stations.json"))
+    except requests.RequestException as exc:
+        print(f"Subway stations unavailable ({exc}); metro clues and walking times are skipped.")
+        stations = []
     embedder = MultilingualE5Embedder(device="mps")
     store = QdrantListingStore()
 

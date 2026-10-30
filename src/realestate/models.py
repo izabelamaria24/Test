@@ -36,9 +36,10 @@ class EnrichedListing(BaseModel):
     latitude: float | None
     longitude: float | None
     location_confidence: str
-    # Which clue the coordinates came from (e.g. "building", "olx_approximate") and roughly how
-    # far off they may be. Default to None so payloads stored before these fields still load.
-    location_source: str | None = None
+    # Clues the position agrees with (e.g. "building", "metro") and clues it contradicts, and
+    # roughly how far off it may be. Defaulted so payloads stored before these fields still load.
+    location_evidence: list[str] = []
+    location_conflicts: list[str] = []
     location_uncertainty_m: float | None = None
     nearest_subway_station: str | None
     subway_walking_minutes: float | None

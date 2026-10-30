@@ -1,4 +1,6 @@
-from realestate.enrich.geocoder import CachedGeocoder, GeocodeResult
+import math
+
+from realestate.enrich.geocoder import CachedGeocoder, Place
 from realestate.enrich.location_clues import LocationClues
 from realestate.enrich.pipeline import enrich_listing
 from realestate.models import RawListing
@@ -14,11 +16,11 @@ RAW_WITH_MAP = RawListing(
     source_file="304473136.html",
     map_lat=44.42,
     map_lon=26.1,
+    map_radius_km=3,
 )
 
-RAW_WITHOUT_MAP = RAW_WITH_MAP.model_copy(update={"map_lat": None, "map_lon": None})
-
 STATIONS = [{"name": "Universitate", "lat": 44.4356, "lon": 26.1023}]
+BUILDING = Place(44.4325, 26.1013, {"type": "Point", "coordinates": [26.1013, 44.4325]})
 
 
 class FakeClueExtractor:
@@ -31,15 +33,20 @@ class FakeClueExtractor:
         return self._clues
 
 
+def _geocoder(tmp_path, results: dict[str, list[Place]]) -> CachedGeocoder:
+    return CachedGeocoder(tmp_path / "places.json", search_fn=lambda q: results.get(q, []))
+
+
 def _fake_nearest_station(lat, lon, stations, **kwargs):
     return ("Universitate", 6.5)
 
 
+def _fail_nearest_station(*args, **kwargs):
+    raise AssertionError("subway time should not be computed for an imprecise location")
+
+
 def test_enrich_listing_uses_precise_location_from_listing_text(tmp_path):
-    geocoder = CachedGeocoder(
-        cache_path=tmp_path / "cache.json",
-        geocode_fn=lambda address: GeocodeResult(latitude=44.4325, longitude=26.1013, sector=3),
-    )
+    geocoder = _geocoder(tmp_path, {"Strada Sibiu 12, București": [BUILDING]})
     extractor = FakeClueExtractor(LocationClues(street="Strada Sibiu", street_number="12"))
 
     enriched = enrich_listing(
@@ -56,70 +63,45 @@ def test_enrich_listing_uses_precise_location_from_listing_text(tmp_path):
     assert enriched.built_area_sqm == 48.0
     assert enriched.floor_number == 3
     assert enriched.sector == 3
-    assert enriched.latitude == 44.4325
-    assert enriched.longitude == 26.1013
-    assert enriched.location_source == "building"
-    assert enriched.location_uncertainty_m == 100
+    assert enriched.latitude is not None and enriched.longitude is not None
+    assert math.isclose(enriched.latitude, 44.4325, abs_tol=0.001)
+    assert math.isclose(enriched.longitude, 26.1013, abs_tol=0.001)
+    assert enriched.location_evidence == ["olx_point", "building"]
+    assert enriched.location_conflicts == []
+    assert enriched.location_uncertainty_m is not None
+    assert enriched.location_uncertainty_m < 300
     assert enriched.location_confidence == "ok"
     assert enriched.nearest_subway_station == "Universitate"
     assert enriched.subway_walking_minutes == 6.5
 
 
 def test_enrich_listing_skips_subway_time_for_blurred_olx_point(tmp_path):
-    def fail_if_called(address):
-        raise AssertionError("geocoder should not be called without text clues")
-
-    geocoder = CachedGeocoder(cache_path=tmp_path / "cache.json", geocode_fn=fail_if_called)
-
-    def fail_nearest_station(*args, **kwargs):
-        raise AssertionError("subway time should not be computed for an imprecise location")
-
     enriched = enrich_listing(
-        RAW_WITH_MAP, geocoder=geocoder, stations=STATIONS, nearest_station_fn=fail_nearest_station
+        RAW_WITH_MAP,
+        geocoder=_geocoder(tmp_path, {}),
+        stations=STATIONS,
+        nearest_station_fn=_fail_nearest_station,
     )
 
-    assert enriched.latitude == 44.42
-    assert enriched.longitude == 26.1
-    assert enriched.location_source == "olx_approximate"
+    assert enriched.location_evidence == ["olx_point"]
+    assert enriched.location_uncertainty_m is not None
+    assert enriched.location_uncertainty_m > 1000
     assert enriched.location_confidence == "low_confidence_location"
     assert enriched.nearest_subway_station is None
     assert enriched.subway_walking_minutes is None
 
 
-def test_enrich_listing_falls_back_to_geocoding_the_address_when_map_absent(tmp_path):
-    geocoder = CachedGeocoder(
-        cache_path=tmp_path / "cache.json",
-        geocode_fn=lambda address: GeocodeResult(latitude=44.4325, longitude=26.1013),
-    )
-
+def test_enrich_listing_has_no_location_without_any_usable_evidence(tmp_path):
     enriched = enrich_listing(
-        RAW_WITHOUT_MAP,
-        geocoder=geocoder,
+        RAW_WITH_MAP,
+        geocoder=_geocoder(tmp_path, {}),
         stations=STATIONS,
-        nearest_station_fn=_fake_nearest_station,
-    )
-
-    assert enriched.latitude == 44.4325
-    assert enriched.location_source == "address"
-    assert enriched.location_confidence == "low_confidence_location"
-    assert enriched.nearest_subway_station is None
-
-
-def test_enrich_listing_flags_low_confidence_location_when_map_absent_and_geocode_fails(tmp_path):
-    geocoder = CachedGeocoder(
-        cache_path=tmp_path / "cache.json",
-        geocode_fn=lambda address: None,
-    )
-
-    enriched = enrich_listing(
-        RAW_WITHOUT_MAP,
-        geocoder=geocoder,
-        stations=STATIONS,
-        nearest_station_fn=lambda *a, **k: None,
+        olx_point_is_default=True,
+        nearest_station_fn=_fail_nearest_station,
     )
 
     assert enriched.latitude is None
-    assert enriched.location_source is None
+    assert enriched.longitude is None
+    assert enriched.location_evidence == []
     assert enriched.location_uncertainty_m is None
     assert enriched.location_confidence == "low_confidence_location"
-    assert enriched.nearest_subway_station is None

@@ -1,39 +1,36 @@
 import re
 import unicodedata
-from collections.abc import Iterator
-from dataclasses import dataclass
 from typing import Protocol
 
-from realestate.enrich.geocoder import GeocodeResult
+from shapely.geometry import Point
+
+from realestate.enrich.fusion import Evidence, FusedLocation, fuse
+from realestate.enrich.geocoder import Place
 from realestate.enrich.location_clues import LocationClues
 from realestate.enrich.normalizer import normalize_sector
 from realestate.enrich.poi import Station
 from realestate.models import RawListing
-from realestate.sectors import SECTOR_WITH_NEIGHBOURS
 
-# Rough radius, in metres, within which the apartment probably lies for each kind of clue.
-# A listing "near metro X" or on a long street can be some distance from the matched point.
-_UNCERTAINTY_M = {
-    "building": 100,
-    "street": 1000,
-    "metro": 1000,
-    "landmark": 1500,
-    "neighbourhood": 2000,
-}
-# Used when OLX blurs the map point without saying by how much, and for a sector-level address.
-_COARSE_UNCERTAINTY_M = 5000
+# How far from the matched place the apartment may be, in metres, and how often the clue is
+# right at all (the LLM misreads, or the name resolves to a different place). Ads list
+# "nearby" malls and parks within driving distance and use neighbourhood names loosely, while
+# an explicit street and number is rarely wrong.
+_BUILDING_REACH_M, _BUILDING_RELIABILITY = 75, 0.9
+_STREET_REACH_M, _STREET_RELIABILITY = 75, 0.85
+_METRO_REACH_M, _METRO_RELIABILITY = 1000, 0.85
+_LANDMARK_REACH_M, _LANDMARK_RELIABILITY = 1500, 0.6
+_NEIGHBOURHOOD_OUTLINE_REACH_M, _NEIGHBOURHOOD_POINT_REACH_M = 1000, 2000
+_NEIGHBOURHOOD_RELIABILITY = 0.7
+# Sellers name the sector next door for border streets, and sector 6 for new blocks just over
+# the city limit (e.g. Militari Residence), so the sector outline is only loosely enforced.
+_SECTOR_REACH_M, _SECTOR_RELIABILITY = 1500, 0.95
+_OLX_RELIABILITY = 0.9
+_OLX_REACH_WITHOUT_RADIUS_M = 5000
+_WALKING_M_PER_MINUTE = 80
 
 
-class Geocoder(Protocol):
-    def geocode(self, address: str) -> GeocodeResult | None: ...
-
-
-@dataclass(frozen=True)
-class Location:
-    latitude: float
-    longitude: float
-    source: str
-    uncertainty_m: float
+class PlaceSearcher(Protocol):
+    def search(self, query: str) -> list[Place]: ...
 
 
 def _station_key(name: str) -> str:
@@ -48,59 +45,98 @@ def _find_station(name: str, stations: list[Station]) -> Station | None:
     return next((station for station in stations if _station_key(station["name"]) == key), None)
 
 
-def _geocoded(
-    source: str, query: str, geocoder: Geocoder, allowed_sectors: tuple[int, ...] | None
-) -> list[Location]:
-    result = geocoder.geocode(query)
-    if result is None:
+def _searched(
+    kind: str, query: str, geocoder: PlaceSearcher, reach_m: float, reliability: float
+) -> list[Evidence]:
+    places = geocoder.search(f"{query}, București")
+    if not places and kind in ("building", "street"):
+        # New blocks just over the city limit (e.g. Militari Residence) are listed by sector;
+        # the search is still bounded to the Bucharest area.
+        places = geocoder.search(query)
+    if not places:
         return []
-    # A match far from the listing's sector is most likely a same-named place elsewhere in the
-    # city. Neighbouring sectors are allowed: borders run along streets, so a building is easily
-    # listed under the sector next door.
-    if allowed_sectors is not None and result.sector is not None:
-        if result.sector not in allowed_sectors:
-            return []
-    return [Location(result.latitude, result.longitude, source, _UNCERTAINTY_M[source])]
+    return [Evidence(kind, tuple(place.shape() for place in places), reach_m, reliability)]
 
 
-def _clue_locations(
+def _neighbourhood(name: str, geocoder: PlaceSearcher) -> list[Evidence]:
+    shapes = [place.shape() for place in geocoder.search(f"{name}, București")]
+    outlines = tuple(shape for shape in shapes if shape.geom_type in ("Polygon", "MultiPolygon"))
+    if outlines:
+        reach_m = _NEIGHBOURHOOD_OUTLINE_REACH_M
+        return [Evidence("neighbourhood", outlines, reach_m, _NEIGHBOURHOOD_RELIABILITY)]
+    if shapes:
+        reach_m = _NEIGHBOURHOOD_POINT_REACH_M
+        return [Evidence("neighbourhood", tuple(shapes), reach_m, _NEIGHBOURHOOD_RELIABILITY)]
+    return []
+
+
+def gather_evidence(
+    raw: RawListing,
     clues: LocationClues,
-    geocoder: Geocoder,
+    *,
+    geocoder: PlaceSearcher,
     stations: list[Station],
-    allowed_sectors: tuple[int, ...] | None,
-) -> Iterator[Location]:
-    """Lazily resolve clues from most to least precise, so lookups stop at the first hit."""
+    olx_point_is_default: bool = False,
+) -> list[Evidence]:
+    evidence: list[Evidence] = []
+
+    sector = normalize_sector(raw.address_raw)
+    if sector is not None:
+        query = f"Sector {sector}"
+        evidence += _searched("area", query, geocoder, _SECTOR_REACH_M, _SECTOR_RELIABILITY)
+
+    # A point OLX shares across many listings is its per-sector default, not the apartment.
+    if raw.map_lat is not None and raw.map_lon is not None and not olx_point_is_default:
+        reach_m = (
+            raw.map_radius_km * 1000
+            if raw.map_radius_km is not None
+            else _OLX_REACH_WITHOUT_RADIUS_M
+        )
+        point = Point(raw.map_lon, raw.map_lat)
+        evidence.append(Evidence("olx_point", (point,), reach_m, _OLX_RELIABILITY))
+
+    building: list[Evidence] = []
     if clues.street and clues.street_number:
-        query = f"{clues.street} {clues.street_number}, București"
-        yield from _geocoded("building", query, geocoder, allowed_sectors)
-    if clues.street:
-        yield from _geocoded("street", f"{clues.street}, București", geocoder, allowed_sectors)
+        query = f"{clues.street} {clues.street_number}"
+        building = _searched("building", query, geocoder, _BUILDING_REACH_M, _BUILDING_RELIABILITY)
+    evidence += building
+    if clues.street and not building:
+        query = clues.street
+        evidence += _searched("street", query, geocoder, _STREET_REACH_M, _STREET_RELIABILITY)
+
     if clues.metro_station and (station := _find_station(clues.metro_station, stations)):
-        yield Location(station["lat"], station["lon"], "metro", _UNCERTAINTY_M["metro"])
+        reach_m = (
+            clues.metro_walk_minutes * _WALKING_M_PER_MINUTE
+            if clues.metro_walk_minutes
+            else _METRO_REACH_M
+        )
+        point = Point(station["lon"], station["lat"])
+        evidence.append(Evidence("metro", (point,), reach_m, _METRO_RELIABILITY))
+
     for landmark in clues.landmarks:
-        yield from _geocoded("landmark", f"{landmark}, București", geocoder, allowed_sectors)
+        evidence += _searched(
+            "landmark", landmark, geocoder, _LANDMARK_REACH_M, _LANDMARK_RELIABILITY
+        )
+
     if clues.neighbourhood:
-        query = f"{clues.neighbourhood}, București"
-        yield from _geocoded("neighbourhood", query, geocoder, allowed_sectors)
+        evidence += _neighbourhood(clues.neighbourhood, geocoder)
+
+    return evidence
 
 
 def locate_listing(
-    raw: RawListing, clues: LocationClues, *, geocoder: Geocoder, stations: list[Station]
-) -> Location | None:
-    """Best available position for a listing, from the most to the least precise clue."""
-    listing_sector = normalize_sector(raw.address_raw)
-    allowed_sectors = SECTOR_WITH_NEIGHBOURS[listing_sector] if listing_sector else None
-    location = next(_clue_locations(clues, geocoder, stations, allowed_sectors), None)
-    if location is not None:
-        return location
-
-    if raw.map_lat is not None and raw.map_lon is not None:
-        uncertainty_m = (
-            raw.map_radius_km * 1000 if raw.map_radius_km is not None else _COARSE_UNCERTAINTY_M
-        )
-        return Location(raw.map_lat, raw.map_lon, "olx_approximate", uncertainty_m)
-
-    result = geocoder.geocode(raw.address_raw)
-    if result is None:
-        return None
-    return Location(result.latitude, result.longitude, "address", _COARSE_UNCERTAINTY_M)
+    raw: RawListing,
+    clues: LocationClues,
+    *,
+    geocoder: PlaceSearcher,
+    stations: list[Station],
+    olx_point_is_default: bool = False,
+) -> FusedLocation | None:
+    evidence = gather_evidence(
+        raw,
+        clues,
+        geocoder=geocoder,
+        stations=stations,
+        olx_point_is_default=olx_point_is_default,
+    )
+    return fuse(evidence)

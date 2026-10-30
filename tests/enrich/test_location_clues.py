@@ -62,6 +62,7 @@ def test_sends_listing_text_with_json_format_and_thinking_disabled():
     assert request["format"] == "json"
     assert request["think"] is False
     assert "Titlu" in request["prompt"]
+    assert "chain" in request["prompt"]
     assert "x" * 3000 in request["prompt"]
     assert "x" * 3001 not in request["prompt"]
 
@@ -84,6 +85,17 @@ def test_normalizes_loose_llm_output():
     assert clues.neighbourhood is None
     assert clues.metro_station == "Brâncoveanu"
     assert clues.landmarks == ["Mall Vitan", "Parcul IOR", "Lidl"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"), [(5, 5), ("7", 7), (4.6, 5), (0, None), (90, None), ("aproape", None)]
+)
+def test_keeps_only_plausible_stated_walking_minutes_to_the_metro(raw, expected):
+    clues = _extractor_returning({"metro_station": "Dristor", "metro_walk_minutes": raw}).extract(
+        "t", "d"
+    )
+
+    assert clues.metro_walk_minutes == expected
 
 
 def test_drops_overlong_values():

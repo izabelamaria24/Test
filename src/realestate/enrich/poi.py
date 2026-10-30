@@ -1,6 +1,8 @@
+import json
 import logging
 import math
 from collections.abc import Callable
+from pathlib import Path
 from typing import TypedDict, TypeGuard
 
 import requests
@@ -33,6 +35,19 @@ def fetch_bucharest_subway_stations() -> list[Station]:
     )
     response.raise_for_status()
     return parse_overpass_stations(response.json()["elements"])
+
+
+def load_subway_stations(
+    cache_path: Path, fetch_fn: Callable[[], list[Station]] = fetch_bucharest_subway_stations
+) -> list[Station]:
+    # Stations rarely change and Overpass is often overloaded, so fetch once and keep them.
+    if cache_path.exists():
+        return json.loads(cache_path.read_text())
+    stations = fetch_fn()
+    if stations:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(stations, ensure_ascii=False))
+    return stations
 
 
 def _is_coordinate(value: object) -> TypeGuard[float]:

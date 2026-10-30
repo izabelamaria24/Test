@@ -1,10 +1,17 @@
 import copy
 from pathlib import Path
 
-from realestate.enrich.geocoder import CachedGeocoder, GeocodeResult
+from realestate.enrich.geocoder import CachedGeocoder, Place
 from realestate.enrich.location_clues import LocationClues
 from realestate.ingestion_pipeline import run_ingestion
 from tests.ingest.test_olx_parser import SAMPLE_AD, SAMPLE_HTML, _build_sample_html
+
+STREET = Place(44.43, 26.10, {"type": "Point", "coordinates": [26.10, 44.43]})
+
+
+def _geocoder(tmp_path: Path, results: dict[str, list[Place]] | None = None) -> CachedGeocoder:
+    found = results or {}
+    return CachedGeocoder(tmp_path / "places.json", search_fn=lambda q: found.get(q, []))
 
 
 class FakeEmbedder:
@@ -30,10 +37,7 @@ def test_run_ingestion_embeds_and_stores_valid_listings(tmp_path: Path):
     (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
     (tmp_path / "bad.html").write_text("<html></html>", encoding="utf-8")
 
-    geocoder = CachedGeocoder(
-        cache_path=tmp_path / "cache.json",
-        geocode_fn=lambda address: GeocodeResult(latitude=44.43, longitude=26.10),
-    )
+    geocoder = _geocoder(tmp_path)
     store = FakeStore()
 
     report = run_ingestion(
@@ -65,10 +69,7 @@ def test_run_ingestion_quarantines_enrich_failures_without_aborting_batch(tmp_pa
     (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
     (tmp_path / "999999999.html").write_text(_build_sample_html(bad_price_ad), encoding="utf-8")
 
-    geocoder = CachedGeocoder(
-        cache_path=tmp_path / "cache.json",
-        geocode_fn=lambda address: GeocodeResult(latitude=44.43, longitude=26.10),
-    )
+    geocoder = _geocoder(tmp_path)
     store = FakeStore()
 
     report = run_ingestion(
@@ -92,10 +93,7 @@ def test_run_ingestion_locates_listings_from_their_text(tmp_path: Path):
         def extract(self, title: str, description: str) -> LocationClues:
             return LocationClues(street="Strada Sibiu")
 
-    geocoder = CachedGeocoder(
-        cache_path=tmp_path / "cache.json",
-        geocode_fn=lambda address: GeocodeResult(latitude=44.43, longitude=26.10),
-    )
+    geocoder = _geocoder(tmp_path, {"Strada Sibiu, București": [STREET]})
     store = FakeStore()
 
     run_ingestion(
@@ -108,5 +106,38 @@ def test_run_ingestion_locates_listings_from_their_text(tmp_path: Path):
     )
 
     payload = store.upserted[0][2]
-    assert payload["location_source"] == "street"
-    assert payload["latitude"] == 44.43
+    assert payload["location_evidence"] == ["olx_point", "street"]
+    assert payload["location_uncertainty_m"] < 300
+
+
+def test_run_ingestion_ignores_a_map_point_shared_by_many_listings(tmp_path: Path):
+    for listing_id in ("1", "2", "3"):
+        ad = copy.deepcopy(SAMPLE_AD)
+        ad["id"] = int(listing_id)
+        (tmp_path / f"{listing_id}.html").write_text(_build_sample_html(ad), encoding="utf-8")
+    store = FakeStore()
+
+    run_ingestion(
+        tmp_path,
+        geocoder=_geocoder(tmp_path),
+        stations=[],
+        embedder=FakeEmbedder(),
+        store=store,
+    )
+
+    assert [payload["location_evidence"] for _, _, payload in store.upserted] == [[], [], []]
+
+
+def test_run_ingestion_keeps_a_map_point_used_by_fewer_listings(tmp_path: Path):
+    (tmp_path / "304473136.html").write_text(SAMPLE_HTML, encoding="utf-8")
+    store = FakeStore()
+
+    run_ingestion(
+        tmp_path,
+        geocoder=_geocoder(tmp_path),
+        stations=[],
+        embedder=FakeEmbedder(),
+        store=store,
+    )
+
+    assert store.upserted[0][2]["location_evidence"] == ["olx_point"]
