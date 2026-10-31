@@ -1,6 +1,7 @@
 """Buy imobiliare.ro listings through the third-party Apify actor `imobiliare-ro-scraper`.
 
-Paid per listing (about $0.70 per 1,000); every run is capped with `max_charge_usd`.
+Paid per run; the pilot cost about $1.50 per 1,000 listings with details. Every run is capped
+with `max_charge_usd`.
 """
 
 from collections.abc import Callable
@@ -12,8 +13,16 @@ import requests
 _API = "https://api.apify.com/v2"
 _ACTOR = "unfenced-group~imobiliare-ro-scraper"
 _OFFER_TYPES = ("sell", "rent")
+_SEARCH_PATHS = {"sell": "vanzare-apartamente", "rent": "inchirieri-apartamente"}
 _TERMINAL_STATUSES = ("SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED")
 _SERVER_WAIT_SECONDS = 60
+
+
+def sector_search_url(offer_type: str, sector: int) -> str:
+    # Same URL scheme as the category pages in imobiliare.ro's published sitemaps.
+    if offer_type not in _SEARCH_PATHS or not 1 <= sector <= 6:
+        raise ValueError(f"no search page for {offer_type!r} in sector {sector}")
+    return f"https://www.imobiliare.ro/{_SEARCH_PATHS[offer_type]}/bucuresti/sector-{sector}"
 
 
 @dataclass(frozen=True)
@@ -30,24 +39,29 @@ def fetch_imobiliare_listings(
     max_items: int,
     max_charge_usd: float,
     location: str = "bucuresti",
+    start_url: str | None = None,
     post_fn: Callable[..., Any] = requests.post,
     get_fn: Callable[..., Any] = requests.get,
 ) -> FetchResult:
     if offer_type not in _OFFER_TYPES:
         raise ValueError(f"offer_type must be one of {_OFFER_TYPES}, got {offer_type!r}")
     headers = {"Authorization": f"Bearer {token}"}
+    run_input: dict[str, Any] = {
+        "offerType": offer_type,
+        "propertyType": "apartamente",
+        "location": location,
+        "maxItems": max_items,
+        # Coordinates, street address and the full description are only on detail pages.
+        "fetchDetails": True,
+    }
+    if start_url is not None:
+        # The actor then scrapes this search page instead of building one from the fields above.
+        run_input["startUrls"] = [{"url": start_url}]
 
     response = post_fn(
         f"{_API}/acts/{_ACTOR}/runs",
         params={"maxItems": max_items, "maxTotalChargeUsd": max_charge_usd},
-        json={
-            "offerType": offer_type,
-            "propertyType": "apartamente",
-            "location": location,
-            "maxItems": max_items,
-            # Coordinates, street address and the full description are only on detail pages.
-            "fetchDetails": True,
-        },
+        json=run_input,
         headers=headers,
         timeout=30,
     )
