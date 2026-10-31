@@ -1,6 +1,6 @@
 import pytest
 
-from realestate.ingest.apify_imobiliare import fetch_imobiliare_listings, sector_search_url
+from realestate.ingest.apify_imobiliare import fetch_imobiliare_listings
 
 
 class _Response:
@@ -47,30 +47,16 @@ def _fetch(apify: FakeApify, **kwargs):
     )
 
 
-def test_a_search_url_replaces_the_default_city_search():
+def test_ad_urls_replace_the_default_city_search():
     apify = FakeApify(["SUCCEEDED"], items=[])
-    url = "https://www.imobiliare.ro/inchirieri-apartamente/bucuresti/sector-3"
+    urls = [
+        "https://www.imobiliare.ro/oferta/apartament-de-inchiriat-sector-3-titan-2-camere-1",
+        "https://www.imobiliare.ro/oferta/apartament-de-inchiriat-sector-5-rahova-2-camere-2",
+    ]
 
-    _fetch(apify, start_url=url)
+    _fetch(apify, start_urls=urls)
 
-    assert apify.calls[0][2]["json"]["startUrls"] == [{"url": url}]
-
-
-@pytest.mark.parametrize(
-    ("offer_type", "sector", "expected"),
-    [
-        ("sell", 1, "https://www.imobiliare.ro/vanzare-apartamente/bucuresti/sector-1"),
-        ("rent", 6, "https://www.imobiliare.ro/inchirieri-apartamente/bucuresti/sector-6"),
-    ],
-)
-def test_sector_search_url(offer_type, sector, expected):
-    assert sector_search_url(offer_type, sector) == expected
-
-
-@pytest.mark.parametrize(("offer_type", "sector"), [("sell", 0), ("sell", 7), ("buy", 2)])
-def test_sector_search_url_rejects_bad_input(offer_type, sector):
-    with pytest.raises(ValueError):
-        sector_search_url(offer_type, sector)
+    assert apify.calls[0][2]["json"]["startUrls"] == [{"url": url} for url in urls]
 
 
 def test_starts_a_capped_run_and_returns_its_listings():

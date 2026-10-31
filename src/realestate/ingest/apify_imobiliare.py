@@ -13,16 +13,8 @@ import requests
 _API = "https://api.apify.com/v2"
 _ACTOR = "unfenced-group~imobiliare-ro-scraper"
 _OFFER_TYPES = ("sell", "rent")
-_SEARCH_PATHS = {"sell": "vanzare-apartamente", "rent": "inchirieri-apartamente"}
 _TERMINAL_STATUSES = ("SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED")
 _SERVER_WAIT_SECONDS = 60
-
-
-def sector_search_url(offer_type: str, sector: int) -> str:
-    # Same URL scheme as the category pages in imobiliare.ro's published sitemaps.
-    if offer_type not in _SEARCH_PATHS or not 1 <= sector <= 6:
-        raise ValueError(f"no search page for {offer_type!r} in sector {sector}")
-    return f"https://www.imobiliare.ro/{_SEARCH_PATHS[offer_type]}/bucuresti/sector-{sector}"
 
 
 @dataclass(frozen=True)
@@ -39,7 +31,7 @@ def fetch_imobiliare_listings(
     max_items: int,
     max_charge_usd: float,
     location: str = "bucuresti",
-    start_url: str | None = None,
+    start_urls: list[str] | None = None,
     post_fn: Callable[..., Any] = requests.post,
     get_fn: Callable[..., Any] = requests.get,
 ) -> FetchResult:
@@ -54,9 +46,9 @@ def fetch_imobiliare_listings(
         # Coordinates, street address and the full description are only on detail pages.
         "fetchDetails": True,
     }
-    if start_url is not None:
-        # The actor then scrapes this search page instead of building one from the fields above.
-        run_input["startUrls"] = [{"url": start_url}]
+    if start_urls is not None:
+        # Ad (/oferta/) URLs only: the actor returns one empty record for a search page URL.
+        run_input["startUrls"] = [{"url": url} for url in start_urls]
 
     response = post_fn(
         f"{_API}/acts/{_ACTOR}/runs",
