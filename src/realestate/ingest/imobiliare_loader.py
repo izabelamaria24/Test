@@ -24,6 +24,14 @@ def _text(value: object) -> str:
     return html.unescape(value).strip() if isinstance(value, str) else ""
 
 
+def _neighbourhood_from_address(address: str) -> str:
+    # "<street>, <neighbourhood>, Sector N": matched the `neighborhood` field on all 40 pilot ads.
+    parts = [part.strip() for part in address.split(",") if part.strip()]
+    if len(parts) >= 2 and parts[-1].casefold().startswith("sector"):
+        return parts[-2]
+    return ""
+
+
 def split_street_address(street_address: str, neighbourhood: str) -> tuple[str | None, str | None]:
     """Street and building number from e.g. "2a valea argesului, Drumul Taberei, Sector 6"."""
     parts = [part.strip() for part in street_address.split(",") if part.strip()]
@@ -49,8 +57,8 @@ def parse_imobiliare_record(record: dict, *, source_file: str) -> RawListing:
     if record.get("priceCurrency") != "EUR" or not record.get("priceText"):
         raise ValueError(f"no EUR price: {record.get('priceText')!r} {record.get('priceCurrency')}")
 
-    neighbourhood = _text(record.get("neighborhood"))
     address = _text(record.get("streetAddress"))
+    neighbourhood = _text(record.get("neighborhood")) or _neighbourhood_from_address(address)
     city = _text(record.get("city"))
     if city and city.casefold() not in address.casefold():
         address = f"{address}, {city}" if address else city

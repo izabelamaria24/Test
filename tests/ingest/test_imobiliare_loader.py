@@ -81,6 +81,40 @@ def test_sector_is_added_to_the_address_when_missing():
     assert listing.address_raw.endswith(", Sector 6")
 
 
+# Runs started from ad URLs leave `neighborhood` and `city` empty.
+@pytest.mark.parametrize(
+    ("street_address", "neighbourhood", "street", "number"),
+    [
+        ("Floreasca, Sector 1", "Floreasca", None, None),
+        (
+            "30 Strada Doamna Ghica, Doamna Ghica, Sector 2",
+            "Doamna Ghica",
+            "Strada Doamna Ghica",
+            "30",
+        ),
+        ("Avia&#539;iei, Sector 1", "Aviației", None, None),
+        (
+            "nr 36 Bulevardul Nicolae Bălcescu, Universitate, Ultracentral",
+            None,
+            "Bulevardul Nicolae Bălcescu",
+            "36",
+        ),
+    ],
+)
+def test_neighbourhood_comes_from_the_address_when_the_field_is_empty(
+    street_address, neighbourhood, street, number
+):
+    listing = parse_imobiliare_record(
+        _record(streetAddress=street_address, neighborhood=None, city=None), source_file="f"
+    )
+
+    assert (listing.neighbourhood, listing.street, listing.street_number) == (
+        neighbourhood,
+        street,
+        number,
+    )
+
+
 def test_ground_floor_uses_the_romanian_term_the_normalizer_knows():
     listing = parse_imobiliare_record(_record(floor="ground-floor"), source_file="f")
 
