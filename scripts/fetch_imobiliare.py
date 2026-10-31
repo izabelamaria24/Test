@@ -3,8 +3,9 @@
 Usage (APIFY_TOKEN must be set in your shell):
   python scripts/fetch_imobiliare.py {sell|rent} MAX_ITEMS MAX_CHARGE_USD
   python scripts/fetch_imobiliare.py sectors PER_SECTOR MAX_CHARGE_USD_PER_RUN
-The second form runs sale and rent for each of Bucharest's six sectors in parallel, so the
-sample is spread across the city instead of the top of one ranked search.
+The second form runs sale and rent for each of Bucharest's six sectors, so the sample is spread
+across the city instead of the top of one ranked search. Jobs already saved for the same
+PER_SECTOR are skipped, so re-running only fetches what is missing.
 """
 
 import json
@@ -21,7 +22,8 @@ from realestate.ingest.apify_imobiliare import (
 )
 
 OUT_DIR = Path("data/raw/imobiliare")
-PARALLEL_RUNS = 6
+# The free plan refused a 6th simultaneous run with 402 Payment Required.
+PARALLEL_RUNS = 3
 
 
 def _save(result: FetchResult, name: str) -> None:
@@ -51,10 +53,17 @@ if __name__ == "__main__":
         sys.exit(f"unknown mode {mode!r}; use sell, rent or sectors")
 
     jobs = {
-        f"{offer_type}_sector{sector}": (offer_type, sector_search_url(offer_type, sector))
+        f"{offer_type}_sector{sector}_{max_items}": (
+            offer_type,
+            sector_search_url(offer_type, sector),
+        )
         for offer_type in ("sell", "rent")
         for sector in range(1, 7)
     }
+    done = [name for name in jobs if any(OUT_DIR.glob(f"{name}_*.json"))]
+    for name in done:
+        print(f"{name}: already saved, skipping")
+        del jobs[name]
     print(f"Starting {len(jobs)} runs, at most ${max_charge_usd * len(jobs):.2f} in total.")
     failed: list[str] = []
     with ThreadPoolExecutor(max_workers=PARALLEL_RUNS) as pool:
@@ -75,6 +84,8 @@ if __name__ == "__main__":
                 _save(future.result(), name)
             except Exception as exc:  # noqa: BLE001 - report and keep the other runs' data
                 failed.append(name)
-                print(f"{name}: FAILED ({exc})", flush=True)
+                response = getattr(exc, "response", None)
+                detail = f": {response.text[:300]}" if response is not None else ""
+                print(f"{name}: FAILED ({exc}){detail}", flush=True)
     if failed:
         sys.exit(f"{len(failed)} run(s) failed: {', '.join(sorted(failed))}")
