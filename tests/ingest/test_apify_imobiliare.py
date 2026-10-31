@@ -28,7 +28,10 @@ class FakeApify:
         self.calls.append(("GET", url, {"params": params, "headers": headers}))
         if url.endswith("/actor-runs/RUN1"):
             status = self._statuses.pop(0)
-            return _Response({"data": {"id": "RUN1", "status": status, "defaultDatasetId": "DS1"}})
+            run = {"id": "RUN1", "status": status, "defaultDatasetId": "DS1"}
+            if status == "SUCCEEDED":
+                run["usageTotalUsd"] = 0.0142
+            return _Response({"data": run})
         return _Response(self._items)
 
 
@@ -46,9 +49,10 @@ def _fetch(apify: FakeApify, **kwargs):
 def test_starts_a_capped_run_and_returns_its_listings():
     apify = FakeApify(["RUNNING", "SUCCEEDED"], items=[{"id": "1"}, {"id": "2"}])
 
-    listings = _fetch(apify)
+    result = _fetch(apify)
 
-    assert listings == [{"id": "1"}, {"id": "2"}]
+    assert result.listings == [{"id": "1"}, {"id": "2"}]
+    assert result.cost_usd == 0.0142
     method, url, start = apify.calls[0]
     assert method == "POST"
     assert url == "https://api.apify.com/v2/acts/unfenced-group~imobiliare-ro-scraper/runs"

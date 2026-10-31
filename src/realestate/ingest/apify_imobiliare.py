@@ -4,6 +4,7 @@ Paid per listing (about $0.70 per 1,000); every run is capped with `max_charge_u
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -15,6 +16,13 @@ _TERMINAL_STATUSES = ("SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED")
 _SERVER_WAIT_SECONDS = 60
 
 
+@dataclass(frozen=True)
+class FetchResult:
+    listings: list[dict]
+    # As reported right after the run ends; Apify may still adjust it slightly.
+    cost_usd: float | None
+
+
 def fetch_imobiliare_listings(
     token: str,
     *,
@@ -24,7 +32,7 @@ def fetch_imobiliare_listings(
     location: str = "bucuresti",
     post_fn: Callable[..., Any] = requests.post,
     get_fn: Callable[..., Any] = requests.get,
-) -> list[dict]:
+) -> FetchResult:
     if offer_type not in _OFFER_TYPES:
         raise ValueError(f"offer_type must be one of {_OFFER_TYPES}, got {offer_type!r}")
     headers = {"Authorization": f"Bearer {token}"}
@@ -65,4 +73,4 @@ def fetch_imobiliare_listings(
         timeout=120,
     )
     response.raise_for_status()
-    return response.json()
+    return FetchResult(listings=response.json(), cost_usd=run.get("usageTotalUsd"))
