@@ -25,6 +25,10 @@ def test_normalize_price_eur_parses_dotted_thousands():
     assert normalize_price_eur("100.000 €") == 100000.0
 
 
+def test_normalize_price_eur_accepts_the_eur_code():
+    assert normalize_price_eur("1.600 EUR") == 1600.0
+
+
 def test_normalize_rooms_detects_studio():
     assert normalize_rooms("Garsoniera 40mp in Centrul Istoric") == 1
 

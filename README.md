@@ -1,9 +1,9 @@
 # Bucharest real-estate semantic search
 
-Natural-language search over Bucharest apartment listings ("2 camere sub 90.000 €, sector 3,
-aproape de metrou, liniștit"). Listings are scraped from OLX, enriched (price, rooms, sector,
-location, subway access), embedded, and stored in Qdrant. Queries are parsed by a local LLM
-into hard filters + semantic text.
+Natural-language search over Bucharest apartment listings for sale and for rent ("2 camere sub 90.000 €, sector 3,
+aproape de metrou, liniștit"). Listings come from OLX and imobiliare.ro, are enriched (price,
+rooms, sector, location, subway access), embedded, and stored in Qdrant. Queries are parsed by a
+local LLM into hard filters + semantic text; buy/rent comes from the query or the UI selector.
 
 ## Quick start
 
@@ -11,7 +11,9 @@ into hard filters + semantic text.
 docker compose up -d qdrant                 # vector DB on :6333 (OSRM service needs data, see below)
 uv sync --extra dev                         # Python 3.14 venv in .venv
 ollama pull qwen3.6:27b                     # local LLM for query parsing + location clues
-uv run python scripts/run_ingestion.py 100  # scrape (if needed) + enrich + embed + store
+uv run python scripts/run_ingestion.py olx 100   # scrape (if needed) + enrich + embed + store
+APIFY_TOKEN=... uv run python scripts/fetch_imobiliare.py rent 20 0.25   # buy records (cost-capped)
+uv run python scripts/run_ingestion.py imobiliare   # ingest saved imobiliare.ro records
 uv run uvicorn realestate.web.app:app --reload   # web demo on :8000
 uv run python -m realestate.eval.run_eval [--strict] [--price-margin 1.15] [--queries q.json]
 ```
@@ -38,6 +40,8 @@ Commits: one short subject line, no trailers; stage files explicitly; never stag
 
 ```
 ingest/   olx_scraper (download) -> olx_parser (HTML -> RawListing) -> olx_loader (directory)
+          apify_imobiliare (buy imobiliare.ro records, cost-capped) -> imobiliare_loader
+          (JSON -> RawListing with sale/rent and the listed street / number / neighbourhood)
 enrich/   normalizer (price, rooms, specs, sector)
           location_clues (LLM -> street, number, neighbourhood, metro, walk minutes, landmarks)
           geocoder (Nominatim search -> candidate places with shapes, cached)

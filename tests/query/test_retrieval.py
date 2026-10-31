@@ -88,8 +88,32 @@ def test_search_passes_parsed_filters_and_embedded_semantic_text_to_store():
         "rooms": None,
         "sectors": None,
         "max_subway_minutes": 15,
+        "listing_type": None,
         "limit": 5,
     }
+
+
+def test_search_filters_by_the_listing_type_in_the_query():
+    assert _search({"listing_type": "rent"}, strict=True)["listing_type"] == "rent"
+
+
+def test_explicit_listing_type_overrides_the_query_and_applies_to_the_top_up():
+    store = FakeStore()
+
+    search(
+        "apartament de vanzare",
+        parser=FakeParser(
+            ParsedQuery(
+                filters={"listing_type": "sale", "sector": 2},
+                semantic_text="bright hardwood floors",
+            )
+        ),
+        embedder=FakeEmbedder(),
+        store=store,
+        listing_type="rent",
+    )
+
+    assert [call["listing_type"] for call in store.calls] == ["rent", "rent"]
 
 
 def test_strict_search_uses_exact_sector_and_price():
@@ -215,6 +239,7 @@ def test_flexible_search_puts_exact_matches_before_higher_similarity_near_misses
         "rooms": None,
         "sectors": [2],
         "max_subway_minutes": None,
+        "listing_type": None,
         "limit": 3,
     }
     assert store.calls[1]["price_max"] == pytest.approx(115000)

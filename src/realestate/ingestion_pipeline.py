@@ -43,6 +43,27 @@ def run_ingestion(
     clue_extractor: LocationClueExtractor | None = None,
 ) -> IngestionReport:
     raw_listings, parse_failures = load_olx_html_directory(html_dir)
+    report = ingest_listings(
+        raw_listings,
+        geocoder=geocoder,
+        stations=stations,
+        embedder=embedder,
+        store=store,
+        clue_extractor=clue_extractor,
+    )
+    report.parse_failures = parse_failures
+    return report
+
+
+def ingest_listings(
+    raw_listings: list[RawListing],
+    *,
+    geocoder: CachedGeocoder,
+    stations: list[Station],
+    embedder: Embedder,
+    store: VectorStore,
+    clue_extractor: LocationClueExtractor | None = None,
+) -> IngestionReport:
     default_points = _shared_map_points(raw_listings)
 
     succeeded = 0
@@ -66,6 +87,4 @@ def run_ingestion(
         except Exception as exc:  # noqa: BLE001 - quarantine, don't crash the batch
             enrich_failures.append((raw.external_id, str(exc)))
 
-    return IngestionReport(
-        succeeded=succeeded, parse_failures=parse_failures, enrich_failures=enrich_failures
-    )
+    return IngestionReport(succeeded=succeeded, enrich_failures=enrich_failures)

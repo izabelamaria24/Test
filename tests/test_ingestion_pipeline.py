@@ -3,7 +3,8 @@ from pathlib import Path
 
 from realestate.enrich.geocoder import CachedGeocoder, Place
 from realestate.enrich.location_clues import LocationClues
-from realestate.ingestion_pipeline import run_ingestion
+from realestate.ingestion_pipeline import ingest_listings, run_ingestion
+from realestate.models import RawListing
 from tests.ingest.test_olx_parser import SAMPLE_AD, SAMPLE_HTML, _build_sample_html
 
 STREET = Place(44.43, 26.10, {"type": "Point", "coordinates": [26.10, 44.43]})
@@ -108,6 +109,33 @@ def test_run_ingestion_locates_listings_from_their_text(tmp_path: Path):
     payload = store.upserted[0][2]
     assert payload["location_evidence"] == ["olx_point", "street"]
     assert payload["location_uncertainty_m"] < 300
+
+
+def test_ingest_listings_stores_listings_from_any_source(tmp_path: Path):
+    raw = RawListing(
+        external_id="imobiliare-1",
+        title="Apartament cu 2 camere",
+        description="d",
+        price_raw="650 EUR",
+        address_raw="Strada Sibiu 12, Drumul Taberei, Sector 6",
+        specs={},
+        image_urls=[],
+        source_file="rent.json",
+        map_lat=None,
+        map_lon=None,
+        listing_type="rent",
+    )
+    store = FakeStore()
+
+    report = ingest_listings(
+        [raw], geocoder=_geocoder(tmp_path), stations=[], embedder=FakeEmbedder(), store=store
+    )
+
+    assert report.succeeded == 1
+    external_id, _, payload = store.upserted[0]
+    assert external_id == "imobiliare-1"
+    assert payload["listing_type"] == "rent"
+    assert payload["price_eur"] == 650.0
 
 
 def test_run_ingestion_ignores_a_map_point_shared_by_many_listings(tmp_path: Path):

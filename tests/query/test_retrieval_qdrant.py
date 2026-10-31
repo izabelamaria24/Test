@@ -45,6 +45,7 @@ def _upsert(
     sector: int = 2,
     rooms: int = 2,
     subway_minutes: float = 10,
+    listing_type: str = "sale",
 ) -> None:
     store.upsert(
         external_id,
@@ -54,6 +55,7 @@ def _upsert(
             "sector": sector,
             "rooms": rooms,
             "subway_walking_minutes": subway_minutes,
+            "listing_type": listing_type,
         },
     )
 
@@ -87,3 +89,18 @@ def test_flexible_price_margin_includes_the_upper_budget_boundary(store):
 
     assert [r.payload["external_id"] for r in results] == ["boundary"]
     assert results[0].match_labels == ["+15% over budget"]
+
+
+def test_rentals_and_sales_never_mix(store):
+    _upsert(store, "for-sale", listing_type="sale")
+    _upsert(store, "for-rent", listing_type="rent")
+
+    rentals = search(
+        "bright apartment",
+        parser=_Parser(),
+        embedder=_Embedder(),
+        store=store,
+        listing_type="rent",
+    )
+
+    assert [r.payload["external_id"] for r in rentals] == ["for-rent"]

@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+ListingType = Literal["sale", "rent"]
 
 
 class RawListing(BaseModel):
@@ -18,6 +22,11 @@ class RawListing(BaseModel):
     map_lon: float | None
     # Blur radius OLX draws around the map point; km, judging by the values (2-5) next to zoom 11-13.
     map_radius_km: float | None = None
+    listing_type: ListingType = "sale"
+    # Address parts a portal states explicitly (imobiliare.ro); OLX only has them in free text.
+    street: str | None = None
+    street_number: str | None = None
+    neighbourhood: str | None = None
 
 
 class EnrichedListing(BaseModel):
@@ -25,6 +34,8 @@ class EnrichedListing(BaseModel):
     title: str
     description: str
     price_eur: float
+    # Rent prices are per month. Payloads stored before rentals existed are all sales.
+    listing_type: ListingType = "sale"
     rooms: int | None
     built_area_sqm: float | None
     floor_number: int | None

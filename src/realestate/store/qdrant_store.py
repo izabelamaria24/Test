@@ -52,9 +52,12 @@ class QdrantListingStore:
         rooms: int | None = None,
         sectors: list[int] | None = None,
         max_subway_minutes: float | None = None,
+        listing_type: str | None = None,
         limit: int = 10,
     ) -> list:
         must = []
+        if listing_type is not None:
+            must.append(FieldCondition(key="listing_type", match=MatchValue(value=listing_type)))
         if price_max is not None:
             must.append(FieldCondition(key="price_eur", range=Range(lte=price_max)))
         if rooms is not None:

@@ -38,10 +38,25 @@ class _FakeStore:
     calls: list[dict] = field(default_factory=list)
 
     def query(
-        self, vector, *, price_max=None, rooms=None, sectors=None, max_subway_minutes=None, limit=10
+        self,
+        vector,
+        *,
+        price_max=None,
+        rooms=None,
+        sectors=None,
+        max_subway_minutes=None,
+        listing_type=None,
+        limit=10,
     ):
         self.last_sectors = sectors
-        self.calls.append({"sectors": sectors, "price_max": price_max, "limit": limit})
+        self.calls.append(
+            {
+                "sectors": sectors,
+                "price_max": price_max,
+                "listing_type": listing_type,
+                "limit": limit,
+            }
+        )
         return [
             r
             for r in self.results
@@ -92,6 +107,7 @@ def test_api_search_maps_payload_fields_through_injected_dependencies():
             "address_text": "Sectorul 2",
             "sector": 2,
             "description": "luminoasa",
+            "listing_type": "sale",
             "is_exact_match": True,
             "match_labels": [],
         }
@@ -114,6 +130,26 @@ def test_api_search_returns_null_sector_for_listings_ingested_before_sector_exis
 
     assert response.status_code == 200
     assert response.json()[0]["sector"] is None
+    assert response.json()[0]["listing_type"] == "sale"
+
+
+def test_api_search_passes_the_chosen_listing_type_to_the_store():
+    store = _FakeStore()
+
+    response = _get(
+        "/api/search", {"q": "2 camere", "listing_type": "rent"}, parser=_FakeParser(), store=store
+    )
+
+    assert response.status_code == 200
+    assert store.calls[0]["listing_type"] == "rent"
+
+
+def test_api_search_rejects_an_unknown_listing_type():
+    response = _get(
+        "/api/search", {"q": "x", "listing_type": "buy"}, parser=_FakeParser(), store=_FakeStore()
+    )
+
+    assert response.status_code == 422
 
 
 def test_api_search_is_flexible_by_default_and_strict_when_asked():

@@ -91,6 +91,39 @@ def test_enrich_listing_skips_subway_time_for_blurred_olx_point(tmp_path):
     assert enriched.subway_walking_minutes is None
 
 
+def test_listed_street_address_beats_the_street_guessed_from_the_text(tmp_path):
+    raw = RAW_WITH_MAP.model_copy(
+        update={
+            "listing_type": "rent",
+            "street": "Strada Sibiu",
+            "street_number": "12",
+            "neighbourhood": "Drumul Taberei",
+        }
+    )
+    searched: list[str] = []
+
+    def search(query: str) -> list[Place]:
+        searched.append(query)
+        return [BUILDING] if query == "Strada Sibiu 12, București" else []
+
+    extractor = FakeClueExtractor(
+        LocationClues(street="Strada Gresita", street_number="99", metro_station="Dristor")
+    )
+
+    enriched = enrich_listing(
+        raw,
+        geocoder=CachedGeocoder(tmp_path / "places.json", search_fn=search),
+        stations=STATIONS,
+        clue_extractor=extractor,
+        nearest_station_fn=_fake_nearest_station,
+    )
+
+    assert enriched.listing_type == "rent"
+    assert "building" in enriched.location_evidence
+    assert "Strada Gresita 99, București" not in searched
+    assert "Drumul Taberei, București" in searched
+
+
 def test_enrich_listing_has_no_location_without_any_usable_evidence(tmp_path):
     enriched = enrich_listing(
         RAW_WITH_MAP,

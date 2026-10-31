@@ -156,3 +156,28 @@ def test_parse_drops_sector_outside_1_to_6(bad_sector):
     result = parser.parse("x")
 
     assert result.filters == {"price_max": 100000}
+
+
+@pytest.mark.parametrize(
+    ("listing_type", "kept"), [("rent", True), ("sale", True), ("buy", False), (1, False)]
+)
+def test_parse_keeps_only_sale_or_rent_listing_type(listing_type, kept):
+    def fake_post(url, json, timeout):
+        payload = {"filters": {"listing_type": listing_type}, "semantic_text": "x"}
+        return FakeResponse({"response": json_module.dumps(payload)})
+
+    result = OllamaQueryParser(post_fn=fake_post).parse("apartament de inchiriat")
+
+    assert result.filters == ({"listing_type": listing_type} if kept else {})
+
+
+def test_parse_prompt_asks_for_listing_type():
+    requests_sent = []
+
+    def fake_post(url, json, timeout):
+        requests_sent.append(json)
+        return FakeResponse({"response": '{"filters": {}, "semantic_text": "x"}'})
+
+    OllamaQueryParser(post_fn=fake_post).parse("x")
+
+    assert '"listing_type"' in requests_sent[0]["prompt"]

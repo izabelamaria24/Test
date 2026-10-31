@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from realestate.embed.sentence_embedder import MultilingualE5Embedder
+from realestate.models import ListingType
 from realestate.query.parser import OllamaQueryParser
 from realestate.query.retrieval import search
 from realestate.store.qdrant_store import QdrantListingStore
@@ -57,11 +58,20 @@ def api_search(
     q: str,
     limit: int = 3,
     strict: bool = False,
+    listing_type: ListingType | None = None,
     embedder: MultilingualE5Embedder = Depends(get_embedder),
     parser: OllamaQueryParser = Depends(get_parser),
     store: QdrantListingStore = Depends(get_store),
 ) -> list[dict]:
-    results = search(q, parser=parser, embedder=embedder, store=store, limit=limit, strict=strict)
+    results = search(
+        q,
+        parser=parser,
+        embedder=embedder,
+        store=store,
+        limit=limit,
+        strict=strict,
+        listing_type=listing_type,
+    )
     return [
         {
             "score": r.score,
@@ -73,6 +83,7 @@ def api_search(
             # Points ingested before the sector field existed don't have the key.
             "sector": r.payload.get("sector"),
             "description": r.payload["description"],
+            "listing_type": r.payload.get("listing_type", "sale"),
             "is_exact_match": r.is_exact_match,
             "match_labels": r.match_labels,
         }

@@ -16,6 +16,17 @@ from realestate.models import EnrichedListing, RawListing
 MAX_UNCERTAINTY_FOR_SUBWAY_M = 1000
 
 
+def _with_listed_address(clues: LocationClues, raw: RawListing) -> LocationClues:
+    # A street the seller typed into the portal's address form beats one guessed from the text;
+    # its number goes with it so a guessed number is never paired with a different street.
+    update: dict[str, str | None] = {}
+    if raw.street:
+        update |= {"street": raw.street, "street_number": raw.street_number}
+    if raw.neighbourhood:
+        update["neighbourhood"] = raw.neighbourhood
+    return clues.model_copy(update=update)
+
+
 def enrich_listing(
     raw: RawListing,
     *,
@@ -32,7 +43,7 @@ def enrich_listing(
     )
     location = locate_listing(
         raw,
-        clues,
+        _with_listed_address(clues, raw),
         geocoder=geocoder,
         stations=stations,
         olx_point_is_default=olx_point_is_default,
@@ -48,6 +59,7 @@ def enrich_listing(
 
     return EnrichedListing(
         external_id=raw.external_id,
+        listing_type=raw.listing_type,
         title=raw.title,
         description=raw.description,
         price_eur=normalize_price_eur(raw.price_raw),

@@ -35,12 +35,17 @@ def search(
     limit: int = 10,
     strict: bool = False,
     flexible_price_margin: float = DEFAULT_FLEXIBLE_PRICE_MARGIN,
+    listing_type: str | None = None,
 ) -> list[SearchResult]:
-    """Return exact matches first, optionally filling empty slots with labelled near-misses."""
+    """Return exact matches first, optionally filling empty slots with labelled near-misses.
+
+    An explicit `listing_type` (e.g. a buy/rent toggle) overrides one parsed from the query.
+    """
     if limit <= 0:
         return []
 
     parsed = parser.parse(query)
+    listing_type = listing_type or parsed.filters.get("listing_type")
     price_max = parsed.filters.get("price_max")
     sector = parsed.filters.get("sector")
     sectors = [sector] if sector is not None else None
@@ -52,6 +57,7 @@ def search(
             rooms=parsed.filters.get("rooms"),
             sectors=sectors,
             max_subway_minutes=parsed.filters.get("max_subway_minutes"),
+            listing_type=listing_type,
             limit=limit,
         )
     )
@@ -70,6 +76,7 @@ def search(
             rooms=parsed.filters.get("rooms"),
             sectors=flexible_sectors,
             max_subway_minutes=parsed.filters.get("max_subway_minutes"),
+            listing_type=listing_type,
             limit=limit,
         )
         seen_ids = {point.id for point in results}

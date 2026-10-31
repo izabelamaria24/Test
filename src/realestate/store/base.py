@@ -12,6 +12,7 @@ class VectorStore(Protocol):
         rooms: int | None = None,
         sectors: list[int] | None = None,
         max_subway_minutes: float | None = None,
+        listing_type: str | None = None,
         limit: int = 10,
     ) -> list: ...
 

@@ -25,7 +25,7 @@ class NormalizedSpecs(TypedDict):
 
 
 def normalize_price_eur(price_raw: str) -> float:
-    match = re.search(r"([\d.]+)\s*€", price_raw)
+    match = re.search(r"([\d.]+)\s*(?:€|EUR)", price_raw)
     if not match:
         raise ValueError(f"unrecognized price format: {price_raw!r}")
     digits = match.group(1).replace(".", "")
