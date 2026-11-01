@@ -124,3 +124,50 @@ def test_returns_no_clues_when_ollama_is_unreachable():
         raise requests.ConnectionError("down")
 
     assert OllamaLocationClueExtractor(post_fn=post_fn).extract("t", "d") == LocationClues()
+
+
+def _counting_post(answers: list[object]):
+    calls: list[dict] = []
+
+    def post_fn(url: str, json: dict, timeout: int):
+        calls.append(json)
+        answer = answers[len(calls) - 1]
+        if isinstance(answer, Exception):
+            raise answer
+        return _FakeResponse({"response": _dumps(answer)})
+
+    return post_fn, calls
+
+
+def test_cached_answers_are_reused_across_runs(tmp_path):
+    cache = tmp_path / "clues.jsonl"
+    post_fn, calls = _counting_post([{"street": "Strada Sibiu"}, {"street": "Calea Victoriei"}])
+
+    first = OllamaLocationClueExtractor(post_fn=post_fn, cache_path=cache).extract("t", "d")
+    again = OllamaLocationClueExtractor(post_fn=post_fn, cache_path=cache).extract("t", "d")
+    other = OllamaLocationClueExtractor(post_fn=post_fn, cache_path=cache).extract("t", "d2")
+
+    assert first == again == LocationClues(street="Strada Sibiu")
+    assert other.street == "Calea Victoriei"
+    assert len(calls) == 2
+
+
+def test_a_different_model_does_not_reuse_the_cache(tmp_path):
+    cache = tmp_path / "clues.jsonl"
+    post_fn, calls = _counting_post([{"street": "A"}, {"street": "B"}])
+
+    OllamaLocationClueExtractor(post_fn=post_fn, cache_path=cache).extract("t", "d")
+    other = OllamaLocationClueExtractor(model="other", post_fn=post_fn, cache_path=cache)
+
+    assert other.extract("t", "d").street == "B"
+    assert len(calls) == 2
+
+
+def test_failed_calls_are_not_cached(tmp_path):
+    cache = tmp_path / "clues.jsonl"
+    post_fn, calls = _counting_post([requests.ConnectionError("down"), {"street": "Strada Sibiu"}])
+    extractor = OllamaLocationClueExtractor(post_fn=post_fn, cache_path=cache)
+
+    assert extractor.extract("t", "d") == LocationClues()
+    assert extractor.extract("t", "d").street == "Strada Sibiu"
+    assert len(calls) == 2

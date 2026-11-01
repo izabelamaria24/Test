@@ -24,7 +24,7 @@ class QdrantListingStore:
         collection: str = "listings",
         vector_size: int = 768,
     ):
-        self._client = QdrantClient(url=url)
+        self._client = QdrantClient(url=url, check_compatibility=False)
         self._collection = collection
         if not self._client.collection_exists(collection):
             self._client.create_collection(

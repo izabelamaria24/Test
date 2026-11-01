@@ -48,7 +48,9 @@ if __name__ == "__main__":
         stations=stations,
         embedder=embedder,
         store=store,
-        clue_extractor=OllamaLocationClueExtractor(),
+        clue_extractor=OllamaLocationClueExtractor(
+            cache_path=Path("data/cache/location_clues.jsonl")
+        ),
     )
 
     print(f"Ingested {report.succeeded} listings.")

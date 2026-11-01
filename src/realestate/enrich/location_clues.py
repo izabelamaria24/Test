@@ -1,7 +1,9 @@
+import hashlib
 import json
 import re
 from collections.abc import Callable
-from typing import Protocol
+from pathlib import Path
+from typing import Any, Protocol
 
 import requests
 from pydantic import BaseModel, ValidationError, field_validator
@@ -96,15 +98,39 @@ class OllamaLocationClueExtractor:
         model: str = "qwen3.6:27b",
         host: str = "http://localhost:11434",
         post_fn: Callable = _default_post,
+        cache_path: Path | None = None,
     ):
         self._model = model
         self._host = host
         self._post_fn = post_fn
+        self._cache_path = cache_path
+        self._cache: dict[str, dict[str, Any]] = {}
+        if cache_path is not None and cache_path.exists():
+            for line in cache_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # a run stopped mid-write leaves a partial last line
+                self._cache[entry["key"]] = entry["answer"]
 
     def extract(self, title: str, description: str) -> LocationClues:
         prompt = _EXTRACT_PROMPT.format(
             title=title, description=description[:_MAX_DESCRIPTION_CHARS]
         )
+        # Keyed on model and full prompt, so editing either asks the LLM again.
+        key = hashlib.sha256(f"{self._model}\n{prompt}".encode()).hexdigest()
+        answer = self._cache.get(key)
+        if answer is None:
+            answer = self._ask(prompt)
+            if answer is None:
+                return LocationClues()
+            self._remember(key, answer)
+        try:
+            return LocationClues(**answer)
+        except (ValidationError, TypeError):
+            return LocationClues()
+
+    def _ask(self, prompt: str) -> dict[str, Any] | None:
         try:
             response = self._post_fn(
                 f"{self._host}/api/generate",
@@ -118,15 +144,15 @@ class OllamaLocationClueExtractor:
                 timeout=120,
             )
             response.raise_for_status()
-            raw = json.loads(response.json()["response"])
-            if not isinstance(raw, dict):
-                return LocationClues()
-            return LocationClues(**raw)
-        except (
-            requests.RequestException,
-            json.JSONDecodeError,
-            ValidationError,
-            KeyError,
-            TypeError,
-        ):
-            return LocationClues()
+            answer = json.loads(response.json()["response"])
+        except (requests.RequestException, json.JSONDecodeError, KeyError, TypeError):
+            return None
+        return answer if isinstance(answer, dict) else None
+
+    def _remember(self, key: str, answer: dict[str, Any]) -> None:
+        self._cache[key] = answer
+        if self._cache_path is None:
+            return
+        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._cache_path.open("a", encoding="utf-8") as cache_file:
+            cache_file.write(json.dumps({"key": key, "answer": answer}, ensure_ascii=False) + "\n")
