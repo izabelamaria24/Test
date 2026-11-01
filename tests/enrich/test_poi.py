@@ -1,5 +1,6 @@
 import functools
 
+import pytest
 import requests
 
 from realestate.enrich import poi
@@ -10,9 +11,27 @@ from realestate.enrich.poi import (
     load_subway_stations,
     nearest_subway_station,
     parse_overpass_stations,
+    straight_line_walking_minutes,
 )
 
 DRISTOR = {"name": "Dristor 1", "lat": 44.42, "lon": 26.14}
+
+
+def test_straight_line_walking_adds_a_detour_at_walking_pace():
+    # 0.01 degrees of latitude is about 1.11 km: x1.3 detour at 80 m/min is about 18 minutes.
+    assert straight_line_walking_minutes(44.42, 26.14, 44.43, 26.14) == pytest.approx(18.06, 0.01)
+
+
+def test_nearest_station_by_default_needs_no_routing_server(monkeypatch):
+    def no_network(*args, **kwargs):
+        raise AssertionError("network used")
+
+    monkeypatch.setattr(requests, "get", no_network)
+
+    name, minutes = nearest_subway_station(44.42, 26.14, [DRISTOR])
+
+    assert name == "Dristor 1"
+    assert minutes == 0
 
 
 def test_station_list_is_fetched_once_then_read_from_cache(tmp_path):

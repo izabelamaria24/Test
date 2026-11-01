@@ -12,6 +12,9 @@ from realestate.enrich.geocoder import USER_AGENT
 logger = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Typical ratio of street distance to straight-line distance in a city grid.
+_DETOUR_FACTOR = 1.3
+_WALKING_METRES_PER_MINUTE = 80
 
 
 class Station(TypedDict):
@@ -78,6 +81,11 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def straight_line_walking_minutes(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    metres = haversine_km(lat1, lon1, lat2, lon2) * 1000
+    return metres * _DETOUR_FACTOR / _WALKING_METRES_PER_MINUTE
+
+
 def osrm_walking_minutes(
     lat1: float, lon1: float, lat2: float, lon2: float, osrm_url: str = "http://localhost:5000"
 ) -> float:
@@ -96,7 +104,8 @@ def nearest_subway_station(
     stations: list[Station],
     *,
     candidates: int = 3,
-    walking_fn: Callable[[float, float, float, float], float] = osrm_walking_minutes,
+    # Estimate until a local OSRM server is set up; pass osrm_walking_minutes to use it.
+    walking_fn: Callable[[float, float, float, float], float] = straight_line_walking_minutes,
 ) -> tuple[str, float] | None:
     if not stations:
         return None
